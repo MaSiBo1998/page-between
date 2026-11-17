@@ -1,0 +1,15 @@
+name: 网站适配
+description: 提交公开页面样本和识别问题
+body:
+  - type: input
+    id: url
+    attributes:
+      label: 公开目录或章节网址
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 目前识别结果与预期结果
+    validations:
+      required: true

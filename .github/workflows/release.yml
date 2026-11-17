@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate release version
+        id: version
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          assert.match(version, /^\d+\.\d+\.\d+$/);
+          assert.equal(process.env.RELEASE_TAG, `v${version}`, 'Tag must match package.json');
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+      - run: npm ci
+      - run: npm run check
+      - name: Package Chromium extension
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, existsSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync('.output/chrome-mv3/manifest.json', 'utf8'));
+          assert.equal(manifest.version, process.env.VERSION);
+          assert.equal(manifest.manifest_version, 3);
+          assert.equal(manifest.minimum_chrome_version, '116');
+          assert.ok(!manifest.host_permissions?.length, 'Site permissions must remain optional');
+          assert.ok(existsSync(`.output/chrome-mv3/${manifest.background.service_worker}`));
+          NODE
+          ASSET="page-between-${VERSION}-chromium.zip"
+          (cd .output/chrome-mv3 && zip -q -r "../${ASSET}" .)
+          (cd .output && sha256sum "$ASSET" > "${ASSET}.sha256")
+      - name: Prepare release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const version = process.env.VERSION;
+          const changelog = readFileSync('CHANGELOG.md', 'utf8').replace(/\r\n/g, '\n');
+          const heading = `## ${version}\n`;
+          const start = changelog.indexOf(heading);
+          assert.ok(start >= 0, 'Missing changelog entry');
+          const body = changelog.slice(start + heading.length).split('\n## ')[0].trim();
+          const install = `下载 **page-between-${version}-chromium.zip**，解压后在 Chrome / Edge 扩展管理页开启开发者模式，加载包含 manifest.json 的文件夹。\n\n此安装包面向桌面 Chrome / Edge，最低要求 Chromium 116。Source code 是开发源码，不能直接加载。\n\n同名 .sha256 文件用于校验安装 ZIP。`;
+          writeFileSync('.output/release-notes.md', `${install}\n\n## 本版更新\n\n${body}\n`);
+          NODE
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ASSET="page-between-${VERSION}-chromium.zip"
+          gh release create "$RELEASE_TAG" \
+            ".output/$ASSET" \
+            ".output/${ASSET}.sha256" \
+            --verify-tag \
+            --title "页间 ${RELEASE_TAG}" \
+            --notes-file .output/release-notes.md \
+            --latest

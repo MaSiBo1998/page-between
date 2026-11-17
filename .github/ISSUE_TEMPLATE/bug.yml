@@ -1,0 +1,20 @@
+name: 问题反馈
+description: 下载、阅读或扩展运行出现问题
+body:
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与扩展版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 报错信息、公开样本网址或截图
+      description: 请勿提交账号密码、Cookie、个人信息或整本小说。
