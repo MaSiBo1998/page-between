@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { rpc } from '../../src/rpc';
 import type { Job } from '../../src/types';
+import { PREVIEW_BUILD } from '../../src/build-info';
 import '../../src/ui/app.css';
 
 function Popup() {
   const [job, setJob] = useState<Job | null>(null), [error, setError] = useState('');
+  const [reloading, setReloading] = useState(false);
   useEffect(() => {
     void rpc<Job | null>({ op: 'status' }).then(setJob).catch(e => setError(e.message));
     void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
@@ -26,6 +28,12 @@ function Popup() {
     <button className="quiet wide" onClick={() => void open('online')}>导入网址 · 在线阅读</button>
     {error && <p role="alert" className="error">{error}</p>}
     <small>关闭此窗口，后台下载仍会继续。</small>
+    <p className="muted" data-preview-build={PREVIEW_BUILD}>版本：{PREVIEW_BUILD}</p>
+    <button className="quiet wide" disabled={reloading} onClick={() => {
+      setReloading(true);
+      try { chrome.runtime.reload(); }
+      catch (error) { setReloading(false); setError(error instanceof Error ? error.message : String(error)); }
+    }}>应用本地更新 · 重新加载扩展</button>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Popup/>);

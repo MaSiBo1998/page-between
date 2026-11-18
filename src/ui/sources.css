@@ -1,0 +1,18 @@
+.source-panel{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 18px 20px;font:13px/1.55 "Microsoft YaHei",sans-serif}
+.source-heading,.source-row,.source-feedback{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.source-heading{border-bottom:1px solid #87938750;padding-bottom:8px;margin-bottom:12px}
+.source-heading h2{font:500 21px/1.3 serif;margin:0}
+.source-panel h3{font:600 12px/1.4 "Microsoft YaHei",sans-serif;margin:16px 0 6px}
+.source-panel ul{margin:0;padding:0;list-style:none}
+.source-row,.source-current{border-bottom:1px solid #87938738;padding:7px 0;overflow-wrap:anywhere}
+.source-panel small{opacity:.65}
+.source-row small,.source-current small{display:block}
+.source-form{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr) auto;gap:7px;align-items:end;margin:8px 0}
+.source-manual{grid-template-columns:minmax(0,1fr) auto}
+.source-panel :is(input,select){display:block;width:100%;min-width:0;border:1px solid #87938770;border-radius:4px;background:transparent;padding:5px 7px;margin-top:3px}
+.source-panel button,.reader-bottom button:last-child{white-space:nowrap}
+.source-panel .source-primary,.source-panel .source-primary:hover{color:white;background:#3f5a49}
+.source-panel .source-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0;gap:2px}
+.source-panel .source-error{color:#a4432c;margin:4px 0;font-size:12px;overflow-wrap:anywhere}
+.source-feedback{margin:8px 0}
+@media(max-width:340px){.reader header.reader-tools,.reader-bottom{gap:3px;padding-inline:6px}.reader header.reader-tools>button,.reader-bottom>button{padding-inline:4px}.source-panel{padding-inline:10px}.source-actions{flex-direction:column}}

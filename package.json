@@ -1,6 +1,6 @@
 {
   "name": "novel-reader-extension",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -9,7 +9,9 @@
   },
   "scripts": {
     "dev": "wxt",
+    "dev:edge": "wxt -b edge",
     "build": "wxt build",
+    "preview:update": "npm run build && node scripts/sync-preview.mjs",
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

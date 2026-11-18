@@ -22,7 +22,7 @@ try {
   await reader.goto(base + '/reader.html'); await reader.getByLabel('小说正文').waitFor();
   await reader.locator('.reader-scroll').evaluate(el => { el.scrollTop = el.scrollHeight - el.clientHeight - 10; el.dispatchEvent(new Event('scroll')); });
   await reader.waitForFunction(() => Number(document.querySelector('[data-offset]')?.getAttribute('data-offset')) > 0);
-  assert.ok(await reader.locator('[data-offset]').count() <= 3);
+  assert.ok(await reader.locator('[data-block]').count() < 12);
   await reader.locator('.reader-scroll').evaluate(el => { el.scrollTop += 500; el.dispatchEvent(new Event('scroll')); });
   await reader.waitForTimeout(500);
   await reader.reload(); await reader.waitForFunction(() => Number(document.querySelector('[data-offset]')?.getAttribute('data-offset')) > 0);
@@ -30,7 +30,7 @@ try {
   await reader.getByText('<script>window.unsafe=true</script>', { exact: true }).waitFor();
   assert.equal(await reader.evaluate(() => window.unsafe), undefined);
   const result = JSON.parse(await readFile(path.join(root, 'result.json'), 'utf8'));
-  result.checks.push('large chapter uses at most 3 chunks, restores text offset after reload, HTML remains inert text');
+  result.checks.push('large chapter keeps a bounded display window, restores text offset after reload, HTML remains inert text');
   await writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2));
   console.log('Large chapter virtualization, restore and inert HTML: passed');
 } finally { await context.close(); }

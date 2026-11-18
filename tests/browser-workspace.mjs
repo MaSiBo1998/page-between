@@ -76,25 +76,26 @@ try {
   checks.push('TXT export and downloaded-book reading are available inside the same overlay');
   const requestCount = async () => (await (await control.request.get('http://127.0.0.1:18765/stats')).json()).length;
   const before = await requestCount();
+  const chapterRequests = async index => (await (await control.request.get('http://127.0.0.1:18765/stats')).json()).slice(before).filter(item => new URL(item.url).pathname === '/chapter/' + index).length;
   await frame.getByRole('button', { name: '打开悬浮书架', exact: true }).click();
   await frame.getByLabel('小说目录或正文网址').fill('http://127.0.0.1:18765/book');
   await frame.getByRole('button', { name: '导入网址并阅读', exact: true }).click();
   await frame.getByLabel('小说正文').locator('p[data-offset]').first().waitFor();
   assert.ok((await frame.getByLabel('小说正文').innerText()).includes('第1章 测试'));
-  assert.equal(await requestCount() - before, 2);
+  assert.equal(await chapterRequests(1), 2);
   await frame.getByLabel('章节目录').selectOption('1');
-  await frame.getByLabel('小说正文').locator('p[data-offset]').first().waitFor();
-  assert.equal(await requestCount() - before, 4);
+  await frame.locator('[data-block][data-chapter="1"] p[data-offset]').first().waitFor();
+  assert.equal(await chapterRequests(1), 2); assert.equal(await chapterRequests(2), 2);
   await frame.getByLabel('章节目录').selectOption('0');
   await frame.getByLabel('小说正文').locator('p[data-offset]').first().waitFor();
-  assert.equal(await requestCount() - before, 4);
+  assert.equal(await chapterRequests(1), 2); assert.equal(await chapterRequests(2), 2);
   await frame.getByLabel('章节目录').selectOption('1');
-  await frame.getByLabel('小说正文').locator('p[data-offset]').first().waitFor();
-  await frame.getByLabel('小说正文').evaluate(el => { el.scrollTop = 350; el.dispatchEvent(new Event('scroll')); });
+  await frame.locator('[data-block][data-chapter="1"] p[data-offset]').first().waitFor();
+  await frame.getByLabel('小说正文').evaluate(el => { el.scrollTop += 350; el.dispatchEvent(new Event('scroll')); });
   await frame.waitForTimeout(500);
   await site.screenshot({ path: path.join(root, 'online-reading.png') });
   assert.equal(site.url(), 'http://127.0.0.1:18765/ordinary'); assert.equal(await tabCount(), count);
-  checks.push('URL import loads current chapter and both pages only; chapter navigation and cached reread issue no duplicate requests; URL and tab count unchanged');
+  checks.push('URL import loads whole paginated chapters; chapter navigation and cached reread issue no duplicate requests for chapters 1 and 2; URL and tab count unchanged');
   await site.reload();
   assert.equal((await rpc({ op: 'reader-toggle', tabId, view: 'read' })).ok, true);
   for (let n = 0; n < 100; n++) {
@@ -103,9 +104,10 @@ try {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   await frame.getByLabel('小说正文').locator('p[data-offset]').first().waitFor();
+  await frame.waitForTimeout(400);
   assert.equal(await frame.getByLabel('章节目录').inputValue(), '1');
   assert.ok(await frame.getByLabel('小说正文').evaluate(el => el.scrollTop) > 100);
-  assert.equal(await requestCount() - before, 4);
+  assert.equal(await chapterRequests(1), 2); assert.equal(await chapterRequests(2), 2);
   checks.push('source refresh and overlay reopen restore online chapter and text offset from local cache');
   await frame.getByRole('button', { name: '切换下载', exact: true }).click();
   await site.screenshot({ path: path.join(root, 'floating-download.png') });

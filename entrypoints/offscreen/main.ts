@@ -5,7 +5,7 @@ import { Network } from '../../src/network';
 import { Scheduler } from '../../src/scheduler';
 import { authorize } from '../../src/rpc';
 import { bookFromJob } from '../../src/books';
-import { loadOnlineChapter, openOnline, scanCatalog } from '../../src/online';
+import { loadOnlineChapter, openOnline, scanCatalog, verifyOnlineSource } from '../../src/online';
 import { DEFAULT_SETTINGS as settingsDefault, settings, type Job, type Operation, type Scan } from '../../src/types';
 
 let engine: Engine | null = null;
@@ -61,6 +61,10 @@ async function handle(op: Operation): Promise<unknown> {
     const book = await db.book(op.bookId);
     if (!book?.online) throw Error('在线书籍不存在。');
     return loadOnlineChapter(op.bookId, op.index, makeNetwork(book.online.bookURL, settings(engine?.job.settings || settingsDefault)), new AbortController().signal);
+  }
+  if (op.op === 'verify-source') {
+    const root = core.url(op.url);
+    return verifyOnlineSource(root, validateRules(op.rules), makeNetwork(root, settings(op.settings)), AbortSignal.timeout(20000));
   }
   if (commandBusy || scanning || (engine && op.op !== 'open-online')) throw Error('已有下载或识别操作，请先暂停。');
   commandBusy = true;

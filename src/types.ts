@@ -3,6 +3,7 @@ export interface Rules {
   next?: string; catalogNext?: string; remove?: string; reverse?: boolean;
 }
 export interface Entry { title: string; url: string }
+export interface VerifiedSource { book: Book; sampleIndex: number }
 export interface Scan { bookURL: string; title: string; catalog: Entry[]; catalogURLs: string[]; rules: Rules }
 export interface Settings { concurrency: number; minInterval: number; maxInterval: number }
 export const DEFAULT_SETTINGS: Settings = { concurrency: 6, minInterval: 200, maxInterval: 600 };
@@ -24,17 +25,21 @@ export interface ReaderPrefs {
   width: number; height: number; x: number; y: number; shortcut: string;
 }
 export const DEFAULT_READER: ReaderPrefs = {
-  font: 'serif', size: 20, lineHeight: 1.9, color: '#354038', background: '#f5f1e7', opacity: 0.92,
+  font: 'serif', size: 20, lineHeight: 1.9, color: '#354038', background: '#ffffff', opacity: 1,
   width: 560, height: 620, x: 80, y: 80, shortcut: 'Alt+R'
 };
 export type Operation =
+  | { op: 'search-books'; query: string; requestId: string }
+  | { op: 'cancel-book-search'; requestId: string }
+  | { op: 'open-book-search'; query: string }
+  | { op: 'verify-source'; url: string; rules: Rules; settings: Settings }
   | { op: 'scan'; url: string; rules: Rules; settings: Settings; snapshot?: string }
   | { op: 'preview'; scan: Scan; index: number; settings: Settings }
   | { op: 'start'; scan: Scan; start: number; end: number; settings: Settings }
   | { op: 'open-online'; url: string; rules: Rules; settings: Settings; snapshot?: string }
   | { op: 'online-chapter'; bookId: string; index: number }
   | { op: 'pause' | 'resume' | 'cancel' | 'status' | 'export' | 'read-job' | 'health' }
-  | { op: 'reader-toggle'; bookId?: string; tabId?: number; view?: 'read' | 'download' | 'library' | 'online' };
+  | { op: 'reader-toggle'; bookId?: string; tabId?: number; view?: 'read' | 'download' | 'library' | 'online'; visibility?: 'show' | 'hide' | 'keep'; controls?: 'show' | 'hide' };
 export type Reply<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
 export function settings(value: Settings): Settings {
   if (!Number.isInteger(value.concurrency) || value.concurrency < 1 || value.concurrency > 16 ||

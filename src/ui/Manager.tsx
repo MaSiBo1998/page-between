@@ -12,6 +12,7 @@ const fieldNames: [keyof Omit<Rules, 'reverse'>, string, string][] = [
 ];
 function time(seconds: number | null) { return seconds === null ? '估算中' : seconds < 60 ? `${seconds} 秒` : `${Math.ceil(seconds / 60)} 分钟`; }
 export function Manager({ embedded = false, onRead }: { embedded?: boolean; onRead?: (book: Book, index?: number) => Promise<void> }) {
+  const [version] = useState(() => { try { return chrome.runtime.getManifest().version; } catch { return ''; } });
   const params = new URLSearchParams(location.search), sourceTab = Number(params.get('tab')) || undefined;
   const [section, setSection] = useState(location.hash === '#library' ? 'library' : 'download');
   const [url, setURL] = useState(params.get('url') || ''), [rules, setRules] = useState<Rules>({});
@@ -26,17 +27,32 @@ export function Manager({ embedded = false, onRead }: { embedded?: boolean; onRe
   const loadBooks = async () => setBooks(await db.books());
   useEffect(() => {
     let disposed = false;
-    const update = () => { void rpc<Job | null>({ op: 'status' }).then(job => { if (!disposed) setJob(job); }).catch(e => { if (!disposed) setError(e.message); }); };
-    update(); const interval = setInterval(update, 1800);
+    const failure = (error: unknown) => {
+      if (disposed) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (/Extension context invalidated/i.test(message) || !chrome.runtime?.id) {
+        clearInterval(interval);
+        setError('扩展已更新，请刷新当前网页后重新打开浮窗。');
+      } else setError(message);
+    };
+    const update = () => {
+      if (disposed) return;
+      if (!chrome.runtime?.id) { failure(new Error('Extension context invalidated')); return; }
+      void rpc<Job | null>({ op: 'status' }).then(job => { if (!disposed) setJob(job); }).catch(failure);
+    };
+    const interval = setInterval(update, 1800); update();
     void loadBooks().catch(e => setError(e.message));
-    void chrome.storage.local.get(['downloadSettings']).then(saved => { if (saved.downloadSettings) setConfig(saved.downloadSettings); });
+    void (async () => {
+      const saved = await chrome.storage.local.get(['downloadSettings']);
+      if (!disposed && saved.downloadSettings) setConfig(saved.downloadSettings);
+    })().catch(failure);
     return () => { disposed = true; clearInterval(interval); };
   }, []);
   useEffect(() => {
     let disposed = false;
     try {
       const host = new URL(url).hostname;
-      void chrome.storage.local.get('rules:' + host).then(saved => { if (!disposed) setRules(saved['rules:' + host] || {}); });
+      void chrome.storage.local.get('rules:' + host).then(saved => { if (!disposed) setRules(saved['rules:' + host] || {}); }).catch(e => { if (!disposed) setError(e.message); });
     } catch { /* URL input can be incomplete while typing. */ }
     return () => { disposed = true; };
   }, [url]);
@@ -74,7 +90,7 @@ export function Manager({ embedded = false, onRead }: { embedded?: boolean; onRe
     <aside className="sidebar">
       <div className="brand-mark">间</div><span className="eyebrow">BETWEEN THE PAGES</span><h1>页间</h1><p>故事，随身带走。</p>
       <nav aria-label="主导航">{[['download', '01', '下载工作台'], ['library', '02', '本地书架'], ['sites', '03', '网站适配']].map(([key, num, label]) => <button key={key} className={section === key ? 'active' : ''} onClick={() => { setSection(key); if (!embedded) location.hash = key; if (key === 'library') void loadBooks(); }}><span>{num}</span>{label}</button>)}</nav>
-      <div className="sidebar-note">LOCAL FIRST<br/>书籍和阅读位置仅保存在本机。<br/>v0.1.1 · Chrome / Edge</div>
+      <div className="sidebar-note">LOCAL FIRST<br/>书籍和阅读位置仅保存在本机。<br/>v{version} · Chrome / Edge</div>
     </aside>
     <main className="workspace">
       <header className="page-heading"><div><span className="eyebrow">YOUR PERSONAL READING SPACE</span><h2>{section === 'download' ? '把下一段故事，留在本机。' : section === 'library' ? '你的书，翻到上一次。' : '让更多网站，说同一种语言。'}</h2></div><span className="local-badge">● 本地保存</span></header>

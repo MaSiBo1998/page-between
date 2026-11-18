@@ -33,6 +33,13 @@ export const db = {
   },
   async books() { return (await (await database()).getAll('books')).sort((a, b) => b.created - a.created); },
   async book(id: string) { return (await database()).get('books', id); },
+  async ensureBook(book: Book) {
+    const tx = (await database()).transaction('books', 'readwrite');
+    const existing = await tx.store.get(book.id);
+    if (!existing) await tx.store.add(book);
+    await tx.done;
+    return existing ?? book;
+  },
   async saveBook(book: Book, chunks: Chunk[]) {
     const tx = (await database()).transaction(['books', 'chunks'], 'readwrite', { durability: 'strict' });
     const store = tx.objectStore('chunks');

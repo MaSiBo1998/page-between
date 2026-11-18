@@ -24,7 +24,7 @@ export async function scanCatalog(root: string, rules: Rules, network: Pick<Netw
   return { bookURL: root, title, catalog, catalogURLs: [...seen], rules };
 }
 
-export async function openOnline(address: string, rules: Rules, network: Pick<Network, 'document'>, signal: AbortSignal, snapshot?: string): Promise<Book> {
+async function resolveOnline(address: string, rules: Rules, network: Pick<Network, 'document'>, signal: AbortSignal, snapshot?: string) {
   let root = core.url(address);
   const doc = snapshot ? new DOMParser().parseFromString(snapshot, 'text/html') : await network.document(root, signal);
   let initial = snapshot || doc.documentElement.outerHTML;
@@ -37,15 +37,48 @@ export async function openOnline(address: string, rules: Rules, network: Pick<Ne
   const scan = await scanCatalog(root, rules, network, signal, initial || undefined);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(scan.bookURL));
   const id = 'online:' + [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-  const requestedIndex = scan.catalog.findIndex(entry => entry.url === core.url(address));
+  return { scan, id, requestedIndex: scan.catalog.findIndex(entry => entry.url === core.url(address)) };
+}
+
+function onlineBook(id: string, scan: Scan): Book {
+  return { id, title: scan.title, created: Date.now(), chars: 0, source: scan.bookURL, online: scan,
+    chapters: scan.catalog.map(entry => ({ title: entry.title, chunks: 0, length: 0 })) };
+}
+
+export async function openOnline(address: string, rules: Rules, network: Pick<Network, 'document'>, signal: AbortSignal, snapshot?: string): Promise<Book> {
+  const { scan, id, requestedIndex } = await resolveOnline(address, rules, network, signal, snapshot);
   const locateRequestedChapter = async () => {
     if (requestedIndex >= 0) await db.savePosition({ bookId: id, chapter: requestedIndex, offset: 0, updated: Date.now() });
   };
   const previous = await db.book(id);
   if (previous?.online && JSON.stringify(previous.online.catalog) === JSON.stringify(scan.catalog)) { await locateRequestedChapter(); return previous; }
-  const book: Book = { id, title: scan.title, created: Date.now(), chars: 0, source: scan.bookURL, online: scan,
-    chapters: scan.catalog.map(c => ({ title: c.title, chunks: 0, length: 0 })) };
+  const book = onlineBook(id, scan);
   await db.saveBook(book, []); await locateRequestedChapter(); return book;
+}
+
+async function fetchChapterText(scan: Scan, index: number, network: Pick<Network, 'document'>, signal: AbortSignal) {
+  let record: Pick<RecordData, 'next' | 'pages'> = { next: scan.catalog[index].url, pages: [] };
+  for (;;) {
+    signal.throwIfAborted();
+    const url = record.next!;
+    const page = { ...parseChapter(await network.document(url, signal), url, scan.rules), url };
+    const result = core.validate(scan, index, record, page);
+    record = { next: result.next, pages: [...record.pages, { url, page: result.page, total: result.total, text: page.text }] };
+    if (result.done) return record.pages.map(entry => entry.text).join('\n\n');
+  }
+}
+
+export async function verifyOnlineSource(address: string, rules: Rules, network: Pick<Network, 'document'>, signal: AbortSignal) {
+  const resolved = await resolveOnline(address, rules, network, signal);
+  const previous = await db.book(resolved.id);
+  const scan = previous?.online ?? resolved.scan;
+  const sampleIndex = Math.max(0, scan.catalog.findIndex(entry => entry.url === core.url(address)));
+  const text = await fetchChapterText(scan, sampleIndex, network, signal);
+  signal.throwIfAborted();
+  const stored = await db.ensureBook(onlineBook(resolved.id, scan));
+  if (stored.online?.catalog[sampleIndex]?.url !== scan.catalog[sampleIndex].url) throw Error('该来源的目录已更新，请重新验证。');
+  const book = stored.chapters[sampleIndex].chunks ? stored : await db.cacheChapter(stored.id, sampleIndex, text, CHUNK_SIZE);
+  return { book, sampleIndex };
 }
 
 const pending = new Map<string, Promise<Book>>();
@@ -56,16 +89,7 @@ export function loadOnlineChapter(bookId: string, index: number, network: Pick<N
     const book = await db.book(bookId);
     if (!book?.online || !Number.isInteger(index) || !book.chapters[index]) throw Error('在线书籍或章节无效。');
     if (book.chapters[index].chunks) return book;
-    const scan = book.online;
-    let record: RecordData = { jobId: book.id, index, done: false, next: scan.catalog[index].url, pages: [] };
-    while (!record.done) {
-      signal.throwIfAborted();
-      const url = record.next!;
-      const page = { ...parseChapter(await network.document(url, signal), url, scan.rules), url };
-      const result = core.validate(scan, index, record, page);
-      record = { ...record, done: result.done, next: result.next, pages: [...record.pages, { url, page: result.page, total: result.total, text: page.text }] };
-    }
-    return db.cacheChapter(bookId, index, record.pages.map(p => p.text).join('\n\n'), CHUNK_SIZE);
+    return db.cacheChapter(bookId, index, await fetchChapterText(book.online, index, network, signal), CHUNK_SIZE);
   })().finally(() => pending.delete(key));
   pending.set(key, task); return task;
 }

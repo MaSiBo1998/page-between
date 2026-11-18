@@ -1,7 +1,16 @@
 import { DEFAULT_READER, type ReaderPrefs } from './types';
 
 export async function readerPrefs(): Promise<ReaderPrefs> {
-  return { ...DEFAULT_READER, ...(await chrome.storage.local.get('readerPrefs')).readerPrefs };
+  const saved = await chrome.storage.local.get(['readerPrefs', 'readerAppearanceVersion']);
+  const prefs = { ...DEFAULT_READER, ...saved.readerPrefs };
+  if ((saved.readerAppearanceVersion || 0) < 1) {
+    // Migrate only the previous untouched default palette; preserve custom styles.
+    if (prefs.background === '#f5f1e7' && prefs.opacity === 0.92) {
+      prefs.background = DEFAULT_READER.background; prefs.opacity = DEFAULT_READER.opacity;
+    }
+    await chrome.storage.local.set({ readerPrefs: prefs, readerAppearanceVersion: 1 });
+  }
+  return prefs;
 }
 export async function saveReaderPrefs(patch: Partial<ReaderPrefs>) {
   const prefs = { ...await readerPrefs(), ...patch };
@@ -17,4 +26,7 @@ export function matchesShortcut(event: KeyboardEvent, shortcut: string) {
   const parts = shortcut.toLowerCase().split('+').map(s => s.trim());
   return event.altKey === parts.includes('alt') && event.ctrlKey === parts.includes('ctrl') &&
     event.shiftKey === parts.includes('shift') && event.metaKey === parts.includes('meta') && event.key.toLowerCase() === parts.at(-1);
+}
+export function isEditing(target: Element | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 }
