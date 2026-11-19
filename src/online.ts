@@ -41,7 +41,7 @@ async function resolveOnline(address: string, rules: Rules, network: Pick<Networ
 }
 
 function onlineBook(id: string, scan: Scan): Book {
-  return { id, title: scan.title, created: Date.now(), chars: 0, source: scan.bookURL, online: scan,
+  return { id, title: scan.title, created: Date.now(), chars: 0, source: scan.bookURL, online: scan, onShelf: false,
     chapters: scan.catalog.map(entry => ({ title: entry.title, chunks: 0, length: 0 })) };
 }
 
@@ -52,7 +52,7 @@ export async function openOnline(address: string, rules: Rules, network: Pick<Ne
   };
   const previous = await db.book(id);
   if (previous?.online && JSON.stringify(previous.online.catalog) === JSON.stringify(scan.catalog)) { await locateRequestedChapter(); return previous; }
-  const book = onlineBook(id, scan);
+  const book = { ...onlineBook(id, scan), onShelf: previous ? previous.onShelf : false };
   await db.saveBook(book, []); await locateRequestedChapter(); return book;
 }
 

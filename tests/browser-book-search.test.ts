@@ -18,6 +18,12 @@ function browser(granted = true) {
 }
 
 describe('后台搜书', () => {
+  it('拒绝无效数量，不创建搜索标签页', async () => {
+    const { tabs } = browser();
+    for (const limit of [0, 51, 1.5, NaN]) await expect(searchBooks('invalid', 'request', '测试', undefined, limit)).rejects.toThrow('搜索数量');
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+
   it('Bing 或书源拒绝授权后不发起后续操作', async () => {
     const { tabs, search, permissions } = browser(false);
     await expect(searchBooks('denied', 'request', '测试')).rejects.toThrow('需要授权');

@@ -72,7 +72,7 @@ try {
       samples.push({ blocks: blocks.length, nodes: view.querySelectorAll('*').length, chars: blocks.reduce((n, block) => n + block.textContent.length, 0) });
       if (new Set(blocks.map(block => block.dataset.chunk)).size !== blocks.length) throw Error('duplicate display block');
     }
-    return { ms: performance.now() - started, maxBlocks: Math.max(...samples.map(s => s.blocks)), maxNodes: Math.max(...samples.map(s => s.nodes)), maxChars: Math.max(...samples.map(s => s.chars)), chapter: Number(document.querySelector('[aria-label="章节目录"]').value), samples };
+    return { ms: performance.now() - started, maxBlocks: Math.max(...samples.map(s => s.blocks)), maxNodes: Math.max(...samples.map(s => s.nodes)), maxChars: Math.max(...samples.map(s => s.chars)), chapter: Number(document.querySelector('.continuous-reader').dataset.chapterIndex), samples };
   }, { steps, direction });
   await soak(30, 1); const warmHeap = await heap();
   const forward = await soak(240, 1); const forwardHeap = await heap();

@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { openChapter, revealToolbar } from './reader-browser-helpers.mjs';
 
 // The fixture build adds access ONLY to the synthetic localhost server, so unattended
 // tests do not click native permission dialogs. Production optional permissions stay unchanged.
@@ -41,8 +42,6 @@ try {
   let manager = await context.newPage();
   manager.on('pageerror', error => errors.push(error.message));
   await manager.goto(base + '/manager.html');
-  const sourceId = await manager.evaluate(async () => (await chrome.tabs.query({ url: 'http://127.0.0.1:18765/book' }))[0].id);
-  await manager.goto(base + '/manager.html?tab=' + sourceId);
   const rpc = (page, op) => page.evaluate(operation => chrome.runtime.sendMessage({ channel: 'novel-reader', target: 'background', operation }), op);
   const waitJob = async (page, predicate, timeout = 45000) => {
     const until = Date.now() + timeout;
@@ -55,14 +54,11 @@ try {
     throw Error('Task did not reach expected state: ' + JSON.stringify((await rpc(page, { op: 'status' })).data));
   };
   await rpc(manager, { op: 'cancel' });
-  await manager.getByRole('textbox', { name: '小说完整目录网址' }).fill('http://127.0.0.1:18765/book');
-  await manager.getByRole('button', { name: '授权并识别目录 →' }).click();
-  await manager.getByLabel('起始章节').waitFor();
-  await manager.getByLabel('起始章节').selectOption('2'); await manager.getByLabel('结束章节').selectOption('9');
-  await manager.getByRole('button', { name: '预览起始章', exact: true }).click();
-  await manager.getByRole('button', { name: '开始后台下载', exact: true }).waitFor({ state: 'visible' });
-  await manager.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '开始后台下载').disabled);
-  await manager.getByRole('button', { name: '开始后台下载', exact: true }).click();
+  const config = { concurrency: 6, minInterval: 200, maxInterval: 600 };
+  const verified = await rpc(manager, { op: 'verify-source', url: source.url(), rules: {}, settings: config });
+  assert.equal(verified.ok, true, verified.error);
+  const range = await rpc(manager, { op: 'start', scan: verified.data.book.online, start: 2, end: 9, settings: config });
+  assert.equal(range.ok, true, range.error);
   await waitJob(manager, job => job?.pageCount > 0 && job.status === 'running');
   await source.close(); await manager.close();
   // No source page, popup, or management page remains open during the download.
@@ -89,15 +85,17 @@ try {
   assert.equal(book.chapters.length, 8);
   const reader = await context.newPage(); await reader.goto(base + '/reader.html?book=' + encodeURIComponent(book.id));
   await reader.getByLabel('小说正文').waitFor();
-  await reader.getByLabel('章节目录').selectOption('2');
-  await reader.waitForFunction(() => document.querySelector('.reader-scroll h2')?.textContent.includes('第5章'));
-  await reader.locator('.reader-scroll').evaluate(el => { el.scrollTop = 400; el.dispatchEvent(new Event('scroll')); });
+  await openChapter(reader, 2);
+  const currentChapter = reader.locator('.continuous-reader[data-chapter-index="2"]').getByRole('heading', { name: '第5章 测试', exact: true });
+  await currentChapter.waitFor();
+  await reader.locator('.reader-scroll').evaluate(el => { el.scrollTop += 400; el.dispatchEvent(new Event('scroll')); });
   await reader.waitForTimeout(500); await reader.reload();
-  await reader.waitForFunction(() => document.querySelector('.reader-scroll h2')?.textContent.includes('第5章'));
+  await currentChapter.waitFor();
   assert.ok(await reader.locator('.reader-scroll').evaluate(el => el.scrollTop) > 100);
   checks.push('downloaded book, chapter navigation and text position survive reload');
+  await revealToolbar(reader);
   await reader.getByRole('button', { name: '阅读设置' }).click();
-  await reader.locator('input[type=range]').first().fill('24');
+  await reader.getByRole('spinbutton', { name: '字号' }).fill('24');
   await reader.getByRole('button', { name: '隐藏阅读器' }).click();
   await reader.getByRole('button', { name: /恢复阅读/ }).click();
   checks.push('font settings and hide/restore work');
@@ -112,8 +110,8 @@ try {
   const frame = site.frames().find(f => f.url().includes('/reader.html'));
   assert.ok(frame); await frame.getByLabel('小说正文').waitFor();
   const before = await site.locator('#novel-reader-extension').boundingBox();
-  await site.mouse.move(before.x + before.width / 2, before.y + 3); await site.mouse.down();
-  await site.mouse.move(before.x + before.width / 2 + 120, before.y + 83, { steps: 8 }); await site.mouse.up();
+  await site.mouse.move(before.x + before.width / 2, before.y + 8); await site.mouse.down();
+  await site.mouse.move(before.x + before.width / 2 + 120, before.y + 88, { steps: 8 }); await site.mouse.up();
   const after = await site.locator('#novel-reader-extension').boundingBox();
   assert.ok(after.x >= before.x + 100); assert.ok(after.y >= before.y + 60);
   await site.mouse.move(after.x + after.width - 4, after.y + after.height - 4); await site.mouse.down();

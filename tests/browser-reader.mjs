@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { openChapter } from './reader-browser-helpers.mjs';
 const root = path.resolve('test-results/edge-final');
 const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
   executablePath: process.env.BROWSER_EXE, headless: true, ignoreDefaultArgs: ['--disable-extensions'],
@@ -26,7 +27,7 @@ try {
   await reader.locator('.reader-scroll').evaluate(el => { el.scrollTop += 500; el.dispatchEvent(new Event('scroll')); });
   await reader.waitForTimeout(500);
   await reader.reload(); await reader.waitForFunction(() => Number(document.querySelector('[data-offset]')?.getAttribute('data-offset')) > 0);
-  await reader.getByLabel('章节目录').selectOption('1');
+  await openChapter(reader, 1);
   await reader.getByText('<script>window.unsafe=true</script>', { exact: true }).waitFor();
   assert.equal(await reader.evaluate(() => window.unsafe), undefined);
   const result = JSON.parse(await readFile(path.join(root, 'result.json'), 'utf8'));

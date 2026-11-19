@@ -1,25 +1,42 @@
 html,body,#root{height:100%;margin:0;background:transparent}
 *{box-sizing:border-box}
 .reader{height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.reading-pane{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+[hidden]{display:none!important}
 .reader button,.reader select,.reader input{font:13px/1.5 "Microsoft YaHei",sans-serif;color:inherit}
 .reader button{border:0;background:transparent;cursor:pointer;padding:6px 9px;border-radius:4px}
 .reader button:hover{background:#64746718}
 .reader button:disabled{opacity:.3;cursor:default}
 .reader :focus-visible{outline:2px solid #658272;outline-offset:2px}
-.reader-tools{display:flex;gap:7px;align-items:center;padding:6px 14px;flex-shrink:0;transition:opacity .15s;font:12px/1.5 "Microsoft YaHei",sans-serif;z-index:1}
-.reader-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.65}
-.reader-scroll{overflow:auto;overscroll-behavior:contain;flex:1;min-height:0;padding:18px 26px 24px;scrollbar-width:thin;scrollbar-color:#87938750 transparent;overflow-anchor:none}
+.reader-tools{display:flex;gap:7px;align-items:center;padding:6px 20px;flex-shrink:0;font:12px/1.5 "Microsoft YaHei",sans-serif}
+.reader-header{display:block;padding:8px 20px 6px;border-bottom:1px solid #87938740}
+.reader-title-row,.reader-navigation,.reader-tabs,.reader-actions{display:flex;align-items:center;min-width:0}
+.reader-title-row{gap:4px}
+.reader-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600}
+.reader-title-row button{height:28px;min-width:28px;padding:2px 5px}
+.reader-title-row button:last-child{font-size:17px}
+.reader-navigation{justify-content:space-between;gap:6px;margin-top:3px}
+.reader-tabs,.reader-actions{gap:2px}
+.reader-navigation button{white-space:nowrap;padding:5px 8px;min-height:29px}
+.reader-tabs button[aria-selected=true]{background:#708d752b;font-weight:600;box-shadow:inset 0 -2px 0 #739680}
+.reader-actions button{font-size:12px;opacity:.76}
+.reader-actions button[aria-pressed=true],.reader-title-row button[aria-expanded=true]{background:#708d752b;opacity:1}
+.reader-scroll{overflow:auto;overscroll-behavior:contain;flex:1;min-height:0;padding:16px 8px 14px;scrollbar-width:thin;scrollbar-color:#87938750 transparent;overflow-anchor:none}
 .reader-scroll p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 .45em}
 .reader-scroll h2{font-size:1.15em;font-weight:500;margin:0 0 .8em}
 .reader-options{padding:10px 18px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px;background:#ffffff40;font:12px/1.4 "Microsoft YaHei",sans-serif}
 .reader-options label{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.reader-options input{max-width:100px;width:58%}
+.reader-options-heading{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #87938738}
+.reader-options-heading button{font-size:17px;line-height:1}
+.reader-number{display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+.reader-number input{width:65px;min-width:0;padding:3px 4px;border:1px solid #87938765;border-radius:4px;background:transparent;text-align:right}
+.reader-number span{min-width:13px;opacity:.7}
 .reader-options input[type=color]{height:24px;width:36px;border:0;padding:0;background:none}
-.reader-shortcuts{grid-column:1/-1;margin:0;font-size:11px;line-height:1.7;opacity:.7}
+.reader-shortcut{min-width:0;align-self:center}
+.reader-shortcut .reader-shortcut-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.reader-shortcut-row input{width:112px;max-width:100%;min-width:0;padding:3px 5px;border:1px solid #87938765;border-radius:4px;background:transparent}
+.reader-shortcut small{display:block;color:#a4432c;margin-top:4px}
 .reader select{max-width:100%;background:transparent;border:0}
-.reader-bottom{padding-bottom:8px;border-top:1px solid #87938738}
-.reader-catalog{display:flex;flex:1;align-items:center;gap:7px;min-width:0;white-space:nowrap;cursor:pointer}
-.reader-catalog select{flex:1;min-width:0;cursor:pointer;padding:4px;border:1px solid #87938750;border-radius:4px}
 .reader-empty{margin:auto;padding:36px;text-align:center;line-height:1.9}
 .reader-error{font:12px/1.6 sans-serif;color:#a4432c;padding:8px 20px;margin:0;max-height:100px;overflow:auto}
 .reader-restore{margin:auto!important}
@@ -34,14 +51,21 @@ html,body,#root{height:100%;margin:0;background:transparent}
 .reading-pane{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
 .download-pane{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .reader [hidden]{display:none!important}
-.reader-tools>button{white-space:nowrap}
-.reader-tools>button[aria-pressed=true]{background:#6c806622}
-/* Only edge controls respond to hover; moving over or focusing text keeps them hidden. */
-.reader.is-reading header.reader-tools{position:absolute;top:0;left:0;right:0;opacity:0}
-.reader.is-reading:not([data-controls=hide]) .reader-tools:hover,
-.reader.is-reading:not([data-controls=hide]) .reader-tools:focus-within,
-.reader.is-reading[data-controls=show] .reader-tools{opacity:1}
-.reader.is-reading[data-controls=hide] .reader-tools{visibility:hidden;pointer-events:none}
-.reader.is-reading[data-controls=hide] .reader-bottom{display:none}
-.reader.is-reading .reader-scroll{scrollbar-width:none}
-.reader.is-reading .reader-scroll::-webkit-scrollbar{display:none}
+.reader.is-reading[data-controls=hide] .reader-tools{display:none}
+.reader.is-reading[data-controls=auto] .reader-header{position:absolute;inset:0 0 auto;z-index:3}
+.reader.is-reading[data-controls=auto] .reader-header:not(:hover):not(:has(:focus-visible)){opacity:0;pointer-events:none}
+.reader.is-reading[data-controls=auto] .reader-header::before{content:'';position:absolute;inset:0 12px auto;height:14px;pointer-events:auto}
+.reader.is-reading:not([data-controls=show]) .reader-scroll{scrollbar-width:none}
+.reader.is-reading:not([data-controls=show]) .reader-scroll::-webkit-scrollbar{display:none}
+.chapter-catalog{flex:1;min-height:0;display:flex;flex-direction:column;padding:10px 20px 6px;gap:7px;font:13px/1.5 "Microsoft YaHei",sans-serif}
+.chapter-catalog-tools{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.chapter-catalog-tools input{width:0;flex:1;min-width:0;padding:6px 8px;border:1px solid #87938777;border-radius:4px;background:transparent}
+.chapter-catalog-tools button{white-space:nowrap;border:1px solid #87938751}
+.chapter-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;position:relative;list-style:none;padding:0 2px;margin:0}
+.chapter-list li+li{border-top:1px solid #87938726}
+.chapter-list button{width:100%;min-height:35px;text-align:left;display:grid;grid-template-columns:4ch minmax(0,1fr);gap:8px;align-items:baseline;overflow-wrap:anywhere}
+.chapter-list button[aria-current=true]{background:#708d752b;font-weight:600}
+.chapter-number{font-variant-numeric:tabular-nums;opacity:.66}
+.chapter-no-results{padding:14px 8px;opacity:.72}
+@media(max-width:340px){.reader-navigation{gap:2px}.reader-navigation button{padding-inline:4px}.reader-tabs,.reader-actions{gap:1px}.reader-options{grid-template-columns:1fr;max-height:48%;overflow:auto}}
+@media(max-width:285px){.reader-navigation{flex-wrap:wrap}}

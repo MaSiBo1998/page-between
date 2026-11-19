@@ -1,5 +1,5 @@
 import { db } from '../src/db';
-import type { Operation, Reply } from '../src/types';
+import type { Operation, ReaderView, Reply } from '../src/types';
 
 export default defineBackground(() => {
   let creating: Promise<void> | undefined;
@@ -23,7 +23,7 @@ export default defineBackground(() => {
     }
     throw Error('后台解析器启动超时，请重新打开扩展。');
   }
-  async function toggleReader(bookId?: string, tabId?: number, view?: 'read' | 'download' | 'library' | 'online', visibility?: 'show' | 'hide' | 'keep', controls?: 'show' | 'hide', fromShortcut = false) {
+  async function toggleReader(bookId?: string, tabId?: number, view?: ReaderView, visibility?: 'show' | 'hide' | 'keep', controls?: 'show' | 'hide', fromShortcut = false) {
     const active = (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
     const saved = (await chrome.storage.session.get('readerTab')).readerTab;
     const targetId = tabId || (/^https?:/.test(active?.url || '') ? active.id : active?.url?.startsWith(chrome.runtime.getURL('')) ? saved : undefined);
@@ -60,7 +60,7 @@ export default defineBackground(() => {
     if (!message.operation) throw Error('未知操作。');
     const operation = message.operation;
     const owner = sender.documentId || `${sender.tab?.id}:${sender.frameId}:${sender.url}`;
-    if (operation.op === 'search-books') return searchBooks(owner, operation.requestId, operation.query, sender.tab?.windowId);
+    if (operation.op === 'search-books') return searchBooks(owner, operation.requestId, operation.query, sender.tab?.windowId, operation.limit);
     if (operation.op === 'cancel-book-search') return cancelBookSearch(owner, operation.requestId);
     if (operation.op === 'open-book-search') return openBookSearch(operation.query);
     if (message.operation.op === 'reader-toggle') return toggleReader(message.operation.bookId, message.operation.tabId, message.operation.view, message.operation.visibility, message.operation.controls);

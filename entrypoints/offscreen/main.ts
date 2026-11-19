@@ -47,6 +47,15 @@ async function execute(job: Job) {
     if (latest?.id === job.id) { latest.status = 'error'; latest.error = error instanceof Error ? error.message : String(error); await db.saveJob(latest); emit(latest); }
   }).finally(() => { engine = null; running = null; });
 }
+async function downloadTXT(title: string, parts: string[], suffix = '') {
+  const url = URL.createObjectURL(new Blob(parts, { type: 'text/plain;charset=utf-8' }));
+  const filename = [...title].map(c => c.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(c) ? '_' : c).join('').slice(0, 90) + suffix + '.txt';
+  try {
+    const result = await chrome.runtime.sendMessage({ channel: 'novel-reader', target: 'background', event: 'download', url, filename });
+    if (!result?.ok) throw Error(result?.error || '导出失败。');
+    return result.data;
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 300000); }
+}
 async function handle(op: Operation): Promise<unknown> {
   await ready;
   if (op.op === 'health') return { running: !!engine, scanning: !!scanning };
@@ -108,15 +117,8 @@ async function handle(op: Operation): Promise<unknown> {
       await execute(job); return job;
     }
     if (op.op === 'export') {
-      const text = toTXT(job, await db.records(job.id));
       if (!job.pageCount) throw Error('还没有已保存的正文。');
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-      const filename = [...job.title].map(c => c.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(c) ? '_' : c).join('').slice(0, 90) + (job.status === 'complete' ? '' : '_部分') + '.txt';
-      try {
-        const result = await chrome.runtime.sendMessage({ channel: 'novel-reader', target: 'background', event: 'download', url, filename });
-        if (!result?.ok) throw Error(result?.error || '导出失败。');
-        return result.data;
-      } finally { setTimeout(() => URL.revokeObjectURL(url), 300000); }
+      return downloadTXT(job.title, [toTXT(job, await db.records(job.id))], job.status === 'complete' ? '' : '_部分');
     }
     if (op.op === 'read-job') {
       const book = await bookFromJob(job, await db.records(job.id));

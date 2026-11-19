@@ -31,7 +31,19 @@ export const db = {
     await Promise.all([tx.objectStore('jobs').put(structuredClone(job)), tx.objectStore('records').put(structuredClone(record))]);
     await tx.done;
   },
-  async books() { return (await (await database()).getAll('books')).sort((a, b) => b.created - a.created); },
+  async shelf() {
+    const tx = (await database()).transaction(['books', 'positions']);
+    const [books, positions] = await Promise.all([tx.objectStore('books').getAll(), tx.objectStore('positions').getAllKeys()]);
+    const previouslyRead = new Set(positions);
+    return books.filter(book => book.onShelf ?? (book.id.startsWith('txt:') || previouslyRead.has(book.id))).sort((a, b) => b.created - a.created);
+  },
+  async addToShelf(id: string) {
+    const tx = (await database()).transaction('books', 'readwrite');
+    const book = await tx.store.get(id);
+    if (book && !book.onShelf) await tx.store.put({ ...book, onShelf: true });
+    await tx.done;
+    if (!book) throw Error('书籍不存在，请重新验证来源。');
+  },
   async book(id: string) { return (await database()).get('books', id); },
   async ensureBook(book: Book) {
     const tx = (await database()).transaction('books', 'readwrite');
@@ -46,7 +58,9 @@ export const db = {
     let cursor = await store.index('bookId').openCursor(book.id);
     while (cursor) { await cursor.delete(); cursor = await cursor.continue(); }
     for (const chunk of chunks) await store.put(chunk);
-    await tx.objectStore('books').put(book);
+    const books = tx.objectStore('books');
+    const previous = await books.get(book.id);
+    await books.put({ ...book, onShelf: previous?.onShelf ?? book.onShelf });
     await tx.done;
   },
   async removeBook(id: string) {

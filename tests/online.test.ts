@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { openOnline, loadOnlineChapter } from '../src/online';
+import { openOnline, loadOnlineChapter, verifyOnlineSource } from '../src/online';
 import { db } from '../src/db';
 
 const html = (source: string) => new DOMParser().parseFromString(source, 'text/html');
@@ -15,6 +15,22 @@ function fixture() {
   return { root, network, signal: new AbortController().signal };
 }
 describe('按需在线阅读', () => {
+  it('验证和初始化位置不会自动收藏；收藏幂等且不创建阅读位置', async () => {
+    const { root, network, signal } = fixture();
+    const { book } = await verifyOnlineSource(root, {}, network, signal);
+    expect((await db.shelf()).some(item => item.id === book.id)).toBe(false);
+    expect(await db.position(book.id)).toBeUndefined();
+    await db.addToShelf(book.id);
+    await db.addToShelf(book.id);
+    expect((await db.shelf()).filter(item => item.id === book.id)).toHaveLength(1);
+    expect(await db.position(book.id)).toBeUndefined();
+    expect((await verifyOnlineSource(root, {}, network, signal)).book.onShelf).toBe(true);
+    const unconfirmed = fixture();
+    const imported = await openOnline(unconfirmed.root + '2', {}, unconfirmed.network, unconfirmed.signal, `<a href="${unconfirmed.root}">返回目录</a>`);
+    expect(await db.position(imported.id)).toBeDefined();
+    expect((await db.shelf()).some(item => item.id === imported.id)).toBe(false);
+  });
+
   it('只导入目录；当前章分页完整落盘后缓存，再次阅读不请求', async () => {
     const { root, network, signal } = fixture();
     const book = await openOnline(root, {}, network, signal);

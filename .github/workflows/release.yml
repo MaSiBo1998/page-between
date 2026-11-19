@@ -69,7 +69,8 @@ jobs:
           assert.ok(start >= 0, 'Missing changelog entry');
           const body = changelog.slice(start + heading.length).split('\n## ')[0].trim();
           const install = `下载 **page-between-${version}-chromium.zip**，解压后在 Chrome / Edge 扩展管理页开启开发者模式，加载包含 manifest.json 的文件夹。\n\n此安装包面向桌面 Chrome / Edge，最低要求 Chromium 116。Source code 是开发源码，不能直接加载。\n\n同名 .sha256 文件用于校验安装 ZIP。`;
-          writeFileSync('.output/release-notes.md', `${install}\n\n## 本版更新\n\n${body}\n`);
+          const guide = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/blob/${process.env.RELEASE_TAG}/docs/user-guide.md`;
+          writeFileSync('.output/release-notes.md', `${install}\n\n[查看完整图文使用手册](${guide})\n\n## 本版更新\n\n${body}\n`);
           NODE
       - name: Publish GitHub Release
         env:

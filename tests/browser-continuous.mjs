@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { chapterIndex, openChapter } from './reader-browser-helpers.mjs';
 const label = process.env.BROWSER_LABEL || 'edge-continuous';
 const root = path.resolve('test-results', label), build = path.join(root, 'extension');
 await mkdir(root, { recursive: true }); await cp('.output/chrome-mv3', build, { recursive: true });
@@ -109,13 +110,16 @@ try {
   assert.ok(firstFrame.isDetached());
   assert.ok(frame && frame !== firstFrame);
   await frame.locator('.reader').waitFor();
-  const address = frame.getByLabel('小说目录或正文网址');
+  assert.equal(await frame.locator('.floating-library input[type=url]').count(), 0);
+  await overlay({ visibility: 'show', controls: 'show', view: 'online' });
+  const address = frame.getByLabel('目录或正文网址');
   assert.equal(await address.inputValue(), '');
   await address.fill(onlineURL);
   await address.press('Home'); await address.press('Shift+End');
   assert.equal(await address.evaluate(field => field.selectionEnd - field.selectionStart), onlineURL.length);
   await address.clear();
-  assert.equal(await frame.getByLabel('小说完整目录网址').inputValue(), '');
+  assert.equal(await address.inputValue(), '');
+  assert.equal(await frame.getByLabel('小说完整目录网址').count(), 0);
   checks.push('iframe readiness queues show/hide/controls without origin errors; stale host replaced; repeated open reuses live frame; reinjection removes old context');
   const importBook = async (name, text) => {
     await overlay({ visibility: 'show', controls: 'show', view: 'library' });
@@ -128,8 +132,10 @@ try {
     try { return await new Promise((resolve, reject) => { const req = database.transaction(store).objectStore(store).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
     finally { database.close(); }
   }, store);
-  await importBook('连续短章.txt', Array.from({ length: 30 }, (_, i) => `第${i + 1}章 短章\n${`这是第${i + 1}章的合成正文，阅读无需点击下一章。\n`.repeat(3)}`).join('\n'));
+  await importBook('连续短章.txt', Array.from({ length: 720 }, (_, i) => `第${i + 1}章 短章\n${`这是第${i + 1}章的合成正文，阅读无需点击下一章。\n`.repeat(3)}`).join('\n'));
   const article = frame.getByLabel('小说正文');
+  const fontSize = () => frame.locator('.continuous-reader').evaluate(el => getComputedStyle(el).fontSize);
+  assert.equal(await fontSize(), '14px');
   await frame.waitForFunction(() => document.querySelectorAll('[data-block]').length >= 4);
   assert.equal(await frame.locator('.next-chapter').count(), 0);
   const wheel = async (delta = 80) => {
@@ -141,14 +147,14 @@ try {
     }, delta);
   };
   const firstWheel = await wheel(); assert.ok(Math.abs(firstWheel.distance - firstWheel.expected) < 2, JSON.stringify(firstWheel));
-  await frame.waitForFunction(() => Number(document.querySelector('[aria-label="章节目录"]').value) > 0);
-  const afterWheel = await frame.getByLabel('章节目录').inputValue();
+  await frame.waitForFunction(() => Number(document.querySelector('.continuous-reader')?.dataset.chapterIndex) > 0);
+  const afterWheel = await chapterIndex(frame);
   assert.equal(await site.evaluate(() => scrollY), 0);
   await frame.waitForTimeout(300);
   const unique = await article.locator('[data-block]').evaluateAll(elements => new Set(elements.map(el => el.dataset.chunk)).size === elements.length);
   assert.equal(unique, true);
   await wheel(-80); await frame.waitForTimeout(300);
-  assert.ok(Number(await frame.getByLabel('章节目录').inputValue()) < Number(afterWheel));
+  assert.ok(Number(await chapterIndex(frame)) < Number(afterWheel));
   const skipped = await article.evaluate(el => {
     const before = el.scrollTop;
     const horizontal = new WheelEvent('wheel', { deltaX: 50, deltaY: 0, cancelable: true }); el.dispatchEvent(horizontal);
@@ -158,21 +164,32 @@ try {
   checks.push('short chapters join automatically; wheel burst advances one viewport minus one line; progress follows visible chapter; reverse wheel and horizontal/zoom exclusions');
 
   await frame.locator('.reader').evaluate(el => { el.dataset.controls = 'auto'; });
-  const catalog = frame.getByRole('combobox', { name: '章节目录' });
-  assert.equal(await catalog.evaluate(el => getComputedStyle(el.closest('footer')).opacity), '1');
-  assert.equal(await catalog.locator('option').count(), 30);
-  for (const index of [29, 19]) {
-    await catalog.selectOption(String(index));
+  const catalog = frame.getByRole('tab', { name: '目录' });
+  const readingTab = () => frame.getByRole('tab', { name: '正文', exact: true });
+  await readingTab().focus(); await readingTab().press('ArrowRight');
+  assert.equal(await catalog.getAttribute('aria-selected'), 'true');
+  assert.equal(await frame.locator('.chapter-list button').count(), 60);
+  assert.equal(await frame.getByRole('button', { name: '下一页章节' }).count(), 0);
+  await frame.locator('.chapter-list').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await frame.locator('.chapter-list button[data-chapter-index="119"]').waitFor();
+  assert.equal(await frame.locator('.chapter-list button').first().getAttribute('data-chapter-index'), '0');
+  const search = frame.getByRole('searchbox', { name: '搜索章节' });
+  await search.fill('不存在的章节'); await frame.getByText('未找到章节').waitFor();
+  await search.fill('短章'); assert.equal(await frame.locator('.chapter-list button').count(), 60);
+  await frame.getByRole('button', { name: '当前章' }).click();
+  assert.equal(await frame.locator('.chapter-list button[aria-current=true]').count(), 1);
+  await site.locator('#novel-reader-extension').screenshot({ path: path.join(root, 'reader-catalog.png') });
+  for (const index of [659, 119]) {
+    await openChapter(frame, index);
     const start = article.locator(`[data-block][data-chapter="${index}"][data-start="0"]`);
     await start.waitFor();
     await frame.waitForTimeout(420);
-    assert.equal(await catalog.inputValue(), String(index));
+    assert.equal(await chapterIndex(frame), String(index));
     assert.ok(Math.abs(await start.evaluate(el => el.getBoundingClientRect().top - el.closest('.reader-scroll').getBoundingClientRect().top)) < 30);
   }
-  await site.screenshot({ path: path.join(root, 'reader-catalog.png') });
-  await catalog.selectOption('0');
+  await openChapter(frame, 0);
   await article.getByText('第1章 短章', { exact: true }).waitFor();
-  checks.push('URLs start blank, input text remains selectable, and the visible directory jumps to the chosen chapter');
+  checks.push('URLs start blank, input text remains selectable, and the chapter list appends on scroll and jumps to the chosen chapter');
 
   // Real pointer input goes into the extension iframe, not a mocked parent handler.
   await overlay({ controls: 'hide', visibility: 'show' });
@@ -182,10 +199,23 @@ try {
       window.dragEvents.push({ type: event.type, x: event.screenX, y: event.screenY, at: performance.now() });
     }, true);
   });
+  await site.evaluate(() => {
+    window.parentDragEvents = [];
+    for (const name of ['pointerdown', 'pointermove', 'pointerup', 'message']) window.addEventListener(name, event => {
+      if (event.type !== 'message' || event.data?.type === 'novel-reader-drag') window.parentDragEvents.push([event.type, event.screenX, event.screenY, event.data, event.target?.nodeName]);
+    }, true);
+  });
   const host = site.locator('#novel-reader-extension');
   let before = await host.boundingBox(), box = await article.boundingBox();
-  await site.mouse.move(box.x + box.width - 40, box.y + box.height / 2); await site.mouse.down(); await site.waitForTimeout(340);
-  await site.mouse.move(box.x + box.width + 60, box.y + box.height / 2 + 70, { steps: 5 }); await site.mouse.up();
+  await site.mouse.move(box.x + box.width - 40, box.y + box.height / 2); await site.mouse.down();
+  await site.mouse.move(box.x + box.width + 60, box.y + box.height / 2 + 70);
+  await site.waitForFunction(({ x, y }) => {
+    const bounds = document.getElementById('novel-reader-extension').getBoundingClientRect();
+    return Math.abs(bounds.x - x) < 2 && Math.abs(bounds.y - y) < 2;
+  }, { x: before.x + 100, y: before.y + 70 }, { timeout: 2000 }).catch(async error => {
+    throw Error(JSON.stringify({ before, after: await host.boundingBox(), box, frameEvents: await frame.evaluate(() => window.dragEvents), parentEvents: await site.evaluate(() => window.parentDragEvents) }), { cause: error });
+  });
+  await site.mouse.up();
   await site.waitForTimeout(150);
   let after = await host.boundingBox();
   assert.ok(Math.abs(after.x - before.x - 100) < 2 && Math.abs(after.y - before.y - 70) < 2, JSON.stringify({ before, after, events: await frame.evaluate(() => window.dragEvents) }));
@@ -198,13 +228,18 @@ try {
   assert.ok(paragraphIndex >= 0);
   const textBox = await article.locator('[data-offset]').nth(paragraphIndex).boundingBox(); before = after;
   await site.mouse.move(textBox.x + 8, textBox.y + 10);
-  await Promise.all([site.mouse.down(), site.mouse.move(textBox.x + 130, textBox.y + 10, { steps: 2 })]);
-  await site.waitForTimeout(350); await site.mouse.up();
-  after = await host.boundingBox(); assert.equal(after.x, before.x); assert.equal(after.y, before.y);
+  await site.mouse.down(); await site.mouse.move(textBox.x - 36, textBox.y + 10); await site.mouse.up();
+  after = await host.boundingBox(); assert.equal(after.x, before.x - 44); assert.equal(after.y, before.y);
   assert.equal(await frame.evaluate(() => window.getSelection().toString()), '');
   assert.equal(await frame.locator('html').evaluate(el => el.classList.contains('reader-dragging')), false);
-  checks.push('real long-press drag works on insecure HTTP, crosses the original iframe boundary and persists position; quick movement does not select text');
-  await overlay({ controls: 'show', visibility: 'show' });
+  await overlay({ controls: 'show', visibility: 'show', view: 'library' });
+  const shelf = frame.locator('.floating-library'); await shelf.waitFor();
+  const shelfBox = await shelf.boundingBox(); before = await host.boundingBox();
+  await site.mouse.move(shelfBox.x + 12, shelfBox.y + 90); await site.mouse.down();
+  await site.mouse.move(shelfBox.x + 44, shelfBox.y + 108); await site.mouse.up();
+  after = await host.boundingBox(); assert.equal(after.x, before.x + 32); assert.equal(after.y, before.y + 18);
+  await readingTab().click();
+  checks.push('immediate mouse drag follows the pointer before release, crosses the original frame boundary, persists position and works on bookshelf whitespace without selecting text');
   await site.bringToFront();
   await site.locator('#novel-reader-extension .frame[data-controls="show"] .grab').waitFor();
   before = await host.boundingBox();
@@ -214,16 +249,43 @@ try {
     for (const type of ['pointerdown', 'pointermove', 'pointerup', 'lostpointercapture']) grab.addEventListener(type, event => window.handleEvents.push([type, event.clientX, event.clientY]));
     window.addEventListener('blur', () => window.handleEvents.push(['blur']), { once: true });
   });
-  const handlePoint = { x: before.x + before.width / 2, y: before.y + 3 };
+  const handlePoint = { x: before.x + before.width / 2, y: before.y + 8 };
   await site.mouse.move(15, 15);
   await site.mouse.move(handlePoint.x, handlePoint.y);
   const hit = await site.evaluate(({ x, y }) => document.getElementById('novel-reader-extension').shadowRoot.elementFromPoint(x, y)?.className, handlePoint);
   await site.mouse.down(); await site.mouse.move(handlePoint.x + 20, handlePoint.y + 20); await site.mouse.up();
   after = await host.boundingBox(); assert.ok(Math.abs(after.x - before.x - 20) < 2, JSON.stringify({ before, after, hit, events: await site.evaluate(() => window.handleEvents) }));
-  before = after;
-  await site.mouse.move(before.x + before.width - 4, before.y + before.height - 4); await site.mouse.down();
-  await site.mouse.move(before.x + before.width + 26, before.y + before.height + 26); await site.mouse.up();
-  after = await host.boundingBox(); assert.ok(Math.abs(after.width - before.width - 30) < 2);
+  for (const corner of ['nw', 'ne', 'sw', 'se']) {
+    const west = corner.endsWith('w'), north = corner.startsWith('n');
+    const fixed = box => [west ? box.x + box.width : box.x, north ? box.y + box.height : box.y];
+    for (const distance of [24, -24]) {
+      before = await host.boundingBox();
+      const handle = await host.locator(`.resize[data-corner="${corner}"]`).boundingBox();
+      const center = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+      await site.mouse.move(center.x, center.y); await site.mouse.down();
+      await site.mouse.move(center.x + (west ? -distance : distance), center.y + (north ? -distance : distance), { steps: 3 }); await site.mouse.up();
+      after = await host.boundingBox();
+      assert.deepEqual(fixed(after), fixed(before), corner);
+      assert.ok(Math.abs(after.width - before.width - distance) < 2 && Math.abs(after.height - before.height - distance) < 2, JSON.stringify({ corner, before, after }));
+    }
+  }
+  for (const edge of ['n', 's', 'w', 'e']) {
+    const grip = host.locator(`.resize[data-edge="${edge}"]`);
+    const handle = await grip.boundingBox(); before = await host.boundingBox();
+    const vertical = edge === 'n' || edge === 's';
+    const delta = edge === 'n' || edge === 'w' ? -18 : 18;
+    const fixed = bounds => edge === 'n' ? bounds.y + bounds.height : edge === 'w' ? bounds.x + bounds.width : vertical ? bounds.y : bounds.x;
+    const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+    await site.mouse.move(x, y); await site.mouse.down(); await site.mouse.move(x + (vertical ? 5 : delta), y + (vertical ? delta : 5)); await site.mouse.up();
+    after = await host.boundingBox();
+    assert.equal(fixed(after), fixed(before));
+    assert.equal(after.width - before.width, vertical ? 0 : 18);
+    assert.equal(after.height - before.height, vertical ? 18 : 0);
+    assert.equal(await grip.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+  }
+  const corner = host.locator('.resize[data-corner="se"]');
+  before = await host.boundingBox(); await corner.focus(); await corner.press('ArrowRight');
+  after = await host.boundingBox(); assert.equal(after.width - before.width, 8);
   await site.setViewportSize({ width: 700, height: 730 });
   await site.waitForFunction(() => {
     const box = document.getElementById('novel-reader-extension').getBoundingClientRect();
@@ -231,8 +293,9 @@ try {
   });
   after = await host.boundingBox(); assert.ok(after.x >= 0 && after.y >= 0 && after.x + after.width <= 701 && after.y + after.height <= 731);
   await site.setViewportSize({ width: 1360, height: 920 });
-  checks.push('top handle still drags immediately; corner resizes; shrinking viewport keeps the reader visible');
+  checks.push('top handle drags immediately; invisible edges resize along one axis and corners resize along both; keyboard resizing and viewport clamping work');
   box = await article.boundingBox(); await site.mouse.move(box.x + 40, box.y + 120); await site.mouse.down();
+  await site.mouse.move(box.x + 55, box.y + 130);
   await frame.waitForFunction(() => document.documentElement.classList.contains('reader-dragging'));
   await overlay({ visibility: 'hide' });
   await frame.waitForFunction(() => !document.documentElement.classList.contains('reader-dragging'));
@@ -248,28 +311,77 @@ try {
   const long = books.find(book => book.title === '大章节连续'); const position = positions.find(p => p.bookId === long.id);
   assert.ok(position.offset > 800, JSON.stringify(position));
   // Switch panels and resize without losing the text anchor.
-  await frame.getByLabel('切换下载', { exact: true }).click(); await frame.getByLabel('切换阅读', { exact: true }).click();
+  await frame.getByRole('button', { name: '搜书', exact: true }).click(); await readingTab().click();
   await frame.getByLabel('阅读设置', { exact: true }).click();
-  await frame.locator('label').filter({ hasText: '字号' }).locator('input').fill('25');
-  await frame.getByLabel('阅读设置', { exact: true }).click(); await frame.waitForTimeout(450);
+  const fontField = frame.getByRole('spinbutton', { name: '字号' });
+  const settingsPanel = frame.locator('#reader-options');
+  assert.equal(await fontField.inputValue(), '14');
+  await fontField.fill('25');
+  assert.equal(await fontField.evaluate(el => document.activeElement === el), true);
+  assert.equal(await fontSize(), '25px');
+  await fontField.fill('');
+  assert.equal(await fontSize(), '25px');
+  await article.click({ position: { x: 28, y: 24 } }); await settingsPanel.waitFor({ state: 'hidden' });
+  assert.equal(await fontSize(), '25px');
+  await frame.getByLabel('阅读设置', { exact: true }).click();
+  assert.equal(await fontField.inputValue(), '25');
+  const settingsDrag = await article.boundingBox(), beforeSettingsDrag = await host.boundingBox();
+  await site.mouse.move(settingsDrag.x + 28, settingsDrag.y + 24); await site.mouse.down();
+  await site.mouse.move(settingsDrag.x + 40, settingsDrag.y + 24); await site.mouse.up();
+  assert.equal((await host.boundingBox()).x, beforeSettingsDrag.x + 12);
+  assert.equal(await settingsPanel.isVisible(), true);
+  await frame.getByRole('button', { name: '收起设置' }).click(); await frame.waitForTimeout(450);
   const changed = (await dbRead('positions')).find(p => p.bookId === long.id);
   assert.ok(Math.abs(changed.offset - position.offset) < 120, JSON.stringify({ position, changed }));
+  await frame.getByLabel('阅读设置', { exact: true }).click();
+  const shortcutInput = frame.getByRole('textbox', { name: '隐藏 / 恢复', exact: true });
+  assert.equal(await shortcutInput.inputValue(), 'Alt+R');
+  await shortcutInput.press('Alt+r');
+  assert.equal(await host.isVisible(), true);
+  await shortcutInput.fill('K'); await shortcutInput.press('Enter');
+  await settingsPanel.getByRole('alert').filter({ hasText: '请输入有效组合键' }).waitFor();
+  await shortcutInput.fill('shift + alt + 2'); await shortcutInput.press('Enter');
+  await settingsPanel.getByRole('alert').filter({ hasText: '快捷键冲突' }).waitFor();
+  await shortcutInput.press('Escape');
+  assert.equal(await shortcutInput.inputValue(), 'Alt+R');
+  assert.equal(await host.isVisible(), true);
+  const waitShortcut = value => control.waitForFunction(async shortcut => (await chrome.storage.local.get('readerPrefs')).readerPrefs?.shortcut === shortcut, value);
+  await shortcutInput.fill(' alt + k '); await shortcutInput.press('Enter');
+  await waitShortcut('Alt+K');
+  assert.equal(await shortcutInput.inputValue(), 'Alt+K');
+  await shortcutInput.press('Alt+Shift+8');
+  await waitShortcut('Alt+Shift+8');
+  assert.equal(await shortcutInput.inputValue(), 'Alt+Shift+8');
+  await settingsPanel.screenshot({ path: path.join(root, 'custom-shortcut.png') });
+  await frame.getByRole('button', { name: '收起设置' }).click();
+  await site.keyboard.press('Alt+Shift+8');
+  await host.waitFor({ state: 'hidden' });
+  await site.keyboard.press('Alt+r');
+  assert.equal(await host.isVisible(), false);
+  await site.keyboard.press('Alt+Shift+8');
+  await host.waitFor();
   await site.reload(); await overlay({ visibility: 'show', controls: 'show' }); await site.bringToFront();
   await site.waitForSelector('#novel-reader-extension');
   for (let i = 0; i < 100; i++) { frame = site.frames().find(f => f.url().includes('/reader.html')); if (frame) break; await site.waitForTimeout(50); }
   await frame.locator('[data-block] p').first().waitFor(); await frame.waitForTimeout(500);
+  assert.equal(await fontSize(), '25px');
+  await frame.getByLabel('阅读设置', { exact: true }).click();
+  assert.equal(await frame.getByRole('textbox', { name: '隐藏 / 恢复', exact: true }).inputValue(), 'Alt+Shift+8');
+  await frame.getByRole('button', { name: '收起设置' }).click();
   const restored = (await dbRead('positions')).find(p => p.bookId === long.id);
   assert.ok(Math.abs(restored.offset - changed.offset) < 120, JSON.stringify({ changed, restored }));
-  await frame.getByLabel('章节目录').selectOption('1'); await frame.getByText('<script>window.unsafe=true</script>', { exact: true }).waitFor();
+  await openChapter(frame, 1); await frame.getByText('<script>window.unsafe=true</script>', { exact: true }).waitFor();
   assert.equal(await frame.evaluate(() => window.unsafe), undefined);
   checks.push('long chapter DOM bounded while scrolling; chapter/text offset survives panel switch, font resize and page reload; explicit directory jump; HTML stays inert');
+  checks.push('14px default, valid font changes while focused, empty input does not change font, body click closes settings, drag keeps settings open, saved font persists after reload');
+  checks.push('shortcut accepts typed text and recorded keys, rejects invalid or reserved shortcuts, Escape cancels editing, and the new combination hides/restores and persists across reload');
 
   // Online chapter 2 fails on page 2: current text survives and no partial chapter commits.
   const opened = await rpc({ op: 'open-online', url: onlineURL, rules: {}, settings: { concurrency: 6, minInterval: 50, maxInterval: 80 } });
   assert.equal(opened.ok, true, JSON.stringify(opened)); const online = opened.data;
-  await overlay({ bookId: online.id, view: 'download', visibility: 'show', controls: 'show' });
-  await site.waitForTimeout(350); assert.equal(requests.length, 0, 'download-first view must not start reading requests');
-  await frame.getByLabel('切换阅读', { exact: true }).click();
+  await overlay({ bookId: online.id, view: 'online', visibility: 'show', controls: 'show' });
+  await site.waitForTimeout(350); assert.equal(requests.length, 0, 'search-first view must not start reading requests');
+  await readingTab().click();
   const onlineArticle = frame.getByLabel('小说正文');
   await onlineArticle.getByText(/合成在线第1章第二页/).first().waitFor();
   await onlineArticle.evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -292,38 +404,46 @@ try {
   await frame.getByLabel('小说正文').evaluate(el => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); });
   await site.waitForTimeout(500); assert.equal(requests.length, hiddenCount);
   await overlay({ visibility: 'show', controls: 'show' });
-  await frame.getByLabel('切换下载', { exact: true }).click(); await site.waitForTimeout(200);
-  const downloadCount = requests.length; await site.waitForTimeout(500); assert.equal(requests.length, downloadCount);
-  await frame.getByLabel('切换阅读', { exact: true }).click();
+  await frame.getByRole('button', { name: '搜书', exact: true }).click(); await site.waitForTimeout(200);
+  const searchCount = requests.length; await site.waitForTimeout(500); assert.equal(requests.length, searchCount);
+  await readingTab().click();
   checks.push('online pagination commits whole chapters; failed following chapter keeps current text and retries without duplication; tail chapters stay uncached; hiding/switching panels starts no new reading requests');
-  // Reload the extension while its old Manager is still mounted in a website.
-  // Its next polling update must not crash by reading getManifest again.
-  await overlay({ visibility: 'show', controls: 'show', view: 'download' });
+  await overlay({ visibility: 'show', controls: 'show', view: 'online' });
   await control.getByRole('button', { name: '应用本地更新 · 重新加载扩展', exact: true }).click().catch(error => {
     if (!/closed|destroyed/i.test(error.message)) throw error;
   });
   await site.waitForTimeout(2100);
-  await site.keyboard.press('Alt+r');
+  await site.keyboard.press('Alt+q');
   control = await context.newPage();
   for (let attempt = 0; attempt < 40; attempt++) {
     try { await control.goto(base + '/popup.html'); if (await control.evaluate(() => !!chrome.runtime?.id)) break; }
     catch { /* The extension is restarting. */ }
     await site.waitForTimeout(100);
   }
-  assert.equal((await overlay({ visibility: 'show', controls: 'show', view: 'download' })).ok, true);
+  assert.equal((await overlay({ visibility: 'show', controls: 'show', view: 'online' })).ok, true);
   for (let attempt = 0; attempt < 100; attempt++) {
     frame = site.frames().find(f => f.url().includes('/reader.html'));
     if (frame) break;
     await site.waitForTimeout(50);
   }
-  assert.ok(frame); await frame.locator('.floating-manager').waitFor();
+  assert.ok(frame); await frame.getByRole('region', { name: '搜书面板' }).waitFor();
   assert.equal(await control.evaluate(() => { const info = chrome.runtime.getManifest(); return info.version_name ?? info.version; }), buildVersion);
   assert.equal(await site.locator('#novel-reader-extension').getAttribute('data-page-between-build'), buildVersion);
   assert.equal(await site.locator('#novel-reader-extension').count(), 1);
   await site.waitForTimeout(2000);
-  checks.push('popup build marker and apply-update button; actual extension reload with old Manager mounted; polling stops safely; existing website rebuilds one overlay with matching runtime/host/frame build markers');
+  checks.push('popup build marker and apply-update button; actual extension reload with search mounted; existing website rebuilds one overlay with matching runtime/host/frame build markers');
+  await readingTab().click(); await frame.getByLabel('小说正文').waitFor();
+  await host.screenshot({ path: path.join(root, 'continuous-reader.png') });
+  await site.setViewportSize({ width: 300, height: 620 });
+  await frame.getByRole('tab', { name: '目录' }).click();
+  const fits = await frame.locator('.reader-header').evaluate(header => {
+    const bounds = header.getBoundingClientRect();
+    return Array.from(header.querySelectorAll('button')).every(button => button.getBoundingClientRect().right <= bounds.right);
+  });
+  assert.ok(fits, 'compact header controls must fit at 300px');
+  await host.screenshot({ path: path.join(root, 'reader-narrow.png') });
+  checks.push('reading tabs and utility controls stay in bounds at 300px');
   assert.deepEqual(errors, []);
-  await site.mouse.move(1250, 850); await site.screenshot({ path: path.join(root, 'continuous-reader.png') });
   const result = { label, version: context.browser().version(), checks, errors };
   await writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result, null, 2));
 } finally { await context.close(); await new Promise(resolve => fixture.close(resolve)); }

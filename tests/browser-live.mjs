@@ -24,13 +24,13 @@ try {
   const base = worker.url().split('/background.js')[0];
   const page = await context.newPage(); await page.goto(base + '/manager.html');
   const rpc = op => page.evaluate(operation => chrome.runtime.sendMessage({ channel: 'novel-reader', target: 'background', operation }), op);
-  await page.getByLabel('小说完整目录网址').fill(url.href);
-  await page.getByRole('button', { name: '授权并识别目录 →', exact: true }).click();
-  await page.getByLabel('起始章节').waitFor({ timeout: 60000 });
-  const catalogCount = await page.getByLabel('起始章节').locator('option').count();
-  await page.getByLabel('结束章节').selectOption('1');
-  assert.equal(await page.getByRole('button', { name: '开始后台下载', exact: true }).isEnabled(), true);
-  await page.getByRole('button', { name: '开始后台下载', exact: true }).click();
+  const settings = { concurrency: 6, minInterval: 200, maxInterval: 600 };
+  const verified = await rpc({ op: 'verify-source', url: url.href, rules: {}, settings });
+  assert.equal(verified.ok, true, verified.error);
+  const scan = verified.data.book.online;
+  const catalogCount = scan.catalog.length;
+  const started = await rpc({ op: 'start', scan, start: 0, end: 1, settings });
+  assert.equal(started.ok, true, started.error);
   let job;
   for (let n = 0; n < 300; n++) {
     job = (await rpc({ op: 'status' })).data;

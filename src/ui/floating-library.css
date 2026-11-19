@@ -2,4 +2,5 @@
 
 .online-import{padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid #7f8b7325}.online-import label{display:block;font-size:12px;margin-bottom:7px}.online-import button{margin:10px 0;background:#637e5830}.online-import small{display:block;font-size:11px;opacity:.6}.reading-pane .floating-library{min-height:0}.floating-manager .range-grid select{width:100%}.floating-library button.floating-delete{font:11px sans-serif;opacity:.55}.floating-book-row{position:relative}.floating-book-row .floating-book{padding-right:38px!important}.floating-book-row .floating-delete{position:absolute;right:0;top:15px}
 
-.floating-book-row{display:flex;align-items:center;gap:8px}.floating-book-row>.floating-book{flex:1;min-width:0}.floating-book-row .floating-book span{overflow-wrap:anywhere}
+.floating-book-row .floating-book span{overflow-wrap:anywhere}
+@media(max-width:420px){.floating-library{padding:14px}}

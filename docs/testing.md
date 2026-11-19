@@ -1,5 +1,11 @@
 # 验证记录
 
+## v0.1.3 下载、浮窗与使用手册
+
+- 使用 Node 22 在独立正式版检出中执行 `npm ci` 和 `npm run check`，类型检查、Lint、70 项单测及构建通过。
+- Windows Edge 153 隔离回归：`browser-continuous.mjs` 验证目录、自定义快捷键、整窗隐藏及位置恢复；`browser-sources.mjs` 验证后台搜索不抢焦点、清理临时页、直下与换源失败回退；`browser-workspace.mjs` 验证下载配置折叠、保存、共用任务、暂停续传和浏览器收到 TXT。
+- [图文手册](user-guide.md)中的截图取自本版隔离 Edge 的合成数据。实时 Bing、下载站点的首次权限弹窗和系统级实体按键不在上述自动回归范围。
+
 ## v0.1.2 搜书与换源
 
 正式版回归使用 `npm run check`、`tests/browser-sources.mjs` 和 `tests/browser-continuous.mjs`。浏览器脚本设置 `BROWSER_EXE` 为 Edge 路径，并使用独立配置文件和临时扩展副本。合成数据覆盖后台搜索不抢焦点、去重、临时页清理、手动验证与关联、同章切换、手选章节及失败时保留进度。权限拒绝、取消和超时有独立单测。

@@ -17,7 +17,7 @@ export interface Page { url: string; page: number; total: number | null; text: s
 export interface RecordData { jobId: string; index: number; done: boolean; next: string | null; pages: Page[] }
 export interface ChapterData { kind: string; url: string; rawTitle: string; title: string; text: string; next: string | null; selector: string }
 export interface ChapterMeta { title: string; chunks: number; length: number }
-export interface Book { id: string; title: string; created: number; chars: number; chapters: ChapterMeta[]; source?: string; online?: Scan }
+export interface Book { id: string; title: string; created: number; chars: number; chapters: ChapterMeta[]; source?: string; online?: Scan; onShelf?: boolean }
 export interface Chunk { bookId: string; chapter: number; part: number; text: string }
 export interface Position { bookId: string; chapter: number; offset: number; updated: number }
 export interface ReaderPrefs {
@@ -25,11 +25,12 @@ export interface ReaderPrefs {
   width: number; height: number; x: number; y: number; shortcut: string;
 }
 export const DEFAULT_READER: ReaderPrefs = {
-  font: 'serif', size: 20, lineHeight: 1.9, color: '#354038', background: '#ffffff', opacity: 1,
+  font: 'serif', size: 14, lineHeight: 1.9, color: '#354038', background: '#ffffff', opacity: 1,
   width: 560, height: 620, x: 80, y: 80, shortcut: 'Alt+R'
 };
+export type ReaderView = 'read' | 'library' | 'online' | 'download';
 export type Operation =
-  | { op: 'search-books'; query: string; requestId: string }
+  | { op: 'search-books'; query: string; requestId: string; limit?: number }
   | { op: 'cancel-book-search'; requestId: string }
   | { op: 'open-book-search'; query: string }
   | { op: 'verify-source'; url: string; rules: Rules; settings: Settings }
@@ -39,7 +40,7 @@ export type Operation =
   | { op: 'open-online'; url: string; rules: Rules; settings: Settings; snapshot?: string }
   | { op: 'online-chapter'; bookId: string; index: number }
   | { op: 'pause' | 'resume' | 'cancel' | 'status' | 'export' | 'read-job' | 'health' }
-  | { op: 'reader-toggle'; bookId?: string; tabId?: number; view?: 'read' | 'download' | 'library' | 'online'; visibility?: 'show' | 'hide' | 'keep'; controls?: 'show' | 'hide' };
+  | { op: 'reader-toggle'; bookId?: string; tabId?: number; view?: ReaderView; visibility?: 'show' | 'hide' | 'keep'; controls?: 'show' | 'hide' };
 export type Reply<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
 export function settings(value: Settings): Settings {
   if (!Number.isInteger(value.concurrency) || value.concurrency < 1 || value.concurrency > 16 ||

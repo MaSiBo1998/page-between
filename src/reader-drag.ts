@@ -1,49 +1,52 @@
+export const DRAG_START_DISTANCE = 3;
+
 /** Runs in the extension iframe; the host alone owns window geometry. */
 export function installReaderDrag(doc: Document, send: (message: object) => void) {
   const win = doc.defaultView!;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let pointer: { id: number; x: number; y: number; target: Element; session: string } | undefined;
   let active = false, suppressClick = false;
-  const interactive = 'button,a,input,select,textarea,option,label,[contenteditable]:not([contenteditable="false"]),[role="button"],[role="slider"],[data-no-drag]';
+  const interactive = 'button,a,input,select,textarea,option,label,summary,[contenteditable]:not([contenteditable="false"]),[role="button"],[role="slider"],[data-no-drag]';
   function finish() {
-    clearTimeout(timer); timer = undefined;
     const previous = pointer; pointer = undefined;
-    if (active && previous) {
+    if (previous) {
       send({ type: 'novel-reader-drag', phase: 'end', session: previous.session });
       if (previous.target.hasPointerCapture(previous.id)) previous.target.releasePointerCapture(previous.id);
     }
     active = false; doc.documentElement.classList.remove('reader-dragging');
   }
   const down = (event: PointerEvent) => {
-    if (event.button !== 0 || !event.isPrimary) return;
+    if (event.button !== 0 || !event.isPrimary || event.pointerType !== 'mouse') return;
     finish(); suppressClick = false;
     if (!(event.target instanceof Element) || event.target.closest(interactive)) return;
+    try { event.target.setPointerCapture(event.pointerId); } catch { return; }
     pointer = { id: event.pointerId, x: event.screenX, y: event.screenY, target: event.target, session: crypto.getRandomValues(new Uint32Array(4)).join('-') };
-    timer = setTimeout(() => {
-      if (!pointer) return;
-      try { pointer.target.setPointerCapture(pointer.id); } catch { finish(); return; }
-      active = true; suppressClick = true;
-      doc.getSelection()?.removeAllRanges(); doc.documentElement.classList.add('reader-dragging');
-      send({ type: 'novel-reader-drag', phase: 'start', session: pointer.session, x: pointer.x, y: pointer.y, pointerId: pointer.id });
-    }, 300);
+    send({ type: 'novel-reader-drag', phase: 'start', session: pointer.session, x: pointer.x, y: pointer.y, pointerId: pointer.id });
   };
   const move = (event: PointerEvent) => {
     if (!pointer || event.pointerId !== pointer.id) return;
-    if (!active) { if (Math.hypot(event.screenX - pointer.x, event.screenY - pointer.y) > 6) finish(); return; }
+    if (!(event.buttons & 1)) { finish(); return; }
+    if (!active) {
+      if (Math.hypot(event.screenX - pointer.x, event.screenY - pointer.y) < DRAG_START_DISTANCE) return;
+      active = true; suppressClick = true;
+      doc.getSelection()?.removeAllRanges(); doc.documentElement.classList.add('reader-dragging');
+    }
     event.preventDefault();
     send({ type: 'novel-reader-drag', phase: 'move', session: pointer.session, x: event.screenX, y: event.screenY });
   };
   const up = (event: PointerEvent) => {
     if (pointer?.id !== event.pointerId) return;
     // Fast mouse movement can be coalesced; pointerup carries the final position.
-    if (active && event.type === 'pointerup') send({ type: 'novel-reader-drag', phase: 'move', session: pointer.session, x: event.screenX, y: event.screenY });
+    if (event.type === 'pointerup' && (active || Math.hypot(event.screenX - pointer.x, event.screenY - pointer.y) >= DRAG_START_DISTANCE)) {
+      suppressClick = true;
+      send({ type: 'novel-reader-drag', phase: 'move', session: pointer.session, x: event.screenX, y: event.screenY });
+    }
     finish();
   };
   const blockSelection = (event: Event) => {
     if (event.target instanceof Element && !event.target.closest(interactive)) event.preventDefault();
   };
   const click = (event: MouseEvent) => {
-    if (!suppressClick) return;
+    if (!suppressClick || event.detail === 0) return;
     suppressClick = false; event.preventDefault(); event.stopImmediatePropagation();
   };
   const message = (event: MessageEvent) => {

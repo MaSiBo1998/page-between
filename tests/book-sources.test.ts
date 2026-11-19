@@ -23,9 +23,11 @@ describe('搜书', () => {
     expect(searchPhrase(' 书名 ', ' 作者 ')).toBe('书名 作者 小说 目录');
   });
 
-  it('一页至多保留 12 个结果', () => {
+  it('默认返回至多 10 项，指定数量也不超过首页结果', () => {
     const doc = html(Array.from({ length: 15 }, (_, index) => `<li class="b_algo"><h2><a href="https://books.example/${index}">来源 ${index}</a></h2></li>`).join(''));
-    expect(extractBingResults(doc, searchPage)).toHaveLength(12);
+    expect(extractBingResults(doc, searchPage)).toHaveLength(10);
+    expect(extractBingResults(doc, searchPage, 3)).toHaveLength(3);
+    expect(extractBingResults(doc, searchPage, 50)).toHaveLength(15);
   });
 });
 

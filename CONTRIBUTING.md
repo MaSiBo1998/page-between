@@ -6,4 +6,4 @@
 
 站点适配方法见 [docs/adapters.md](docs/adapters.md)。修改并发逻辑时必须覆盖随机启动间隔、上限、取消、重试和限流；修改存储时必须验证进度不会先于正文落盘。
 
-`.output`、`.wxt`、`node_modules`、`test-results`、`.workflow` 和日志属于本机产物，不提交 Git。提交前检查暂存内容，确保没有本地小说、浏览器配置文件或运行截图。
+`.output`、`.wxt`、`node_modules`、`test-results`、`.workflow` 和日志属于本机产物，不提交 Git。提交前检查暂存内容，确保没有本地小说、浏览器配置文件或运行截图。`docs/images/` 只收录使用手册引用、通过合成数据拍摄和人工筛选的截图。

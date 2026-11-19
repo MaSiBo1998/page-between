@@ -9,10 +9,25 @@
 .source-row small,.source-current small{display:block}
 .source-form{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr) auto;gap:7px;align-items:end;margin:8px 0}
 .source-manual{grid-template-columns:minmax(0,1fr) auto}
+.source-find{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:9px 0}
+.source-find label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.source-find label input{width:62px;margin:0}
 .source-panel :is(input,select){display:block;width:100%;min-width:0;border:1px solid #87938770;border-radius:4px;background:transparent;padding:5px 7px;margin-top:3px}
-.source-panel button,.reader-bottom button:last-child{white-space:nowrap}
+.source-panel button{white-space:nowrap}
 .source-panel .source-primary,.source-panel .source-primary:hover{color:white;background:#3f5a49}
 .source-panel .source-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0;gap:2px}
 .source-panel .source-error{color:#a4432c;margin:4px 0;font-size:12px;overflow-wrap:anywhere}
 .source-feedback{margin:8px 0}
-@media(max-width:340px){.reader header.reader-tools,.reader-bottom{gap:3px;padding-inline:6px}.reader header.reader-tools>button,.reader-bottom>button{padding-inline:4px}.source-panel{padding-inline:10px}.source-actions{flex-direction:column}}
+.source-config{border-bottom:1px solid #87938750;margin-bottom:12px}
+.source-config summary{cursor:pointer;padding:5px 0 10px;font-weight:600}
+.source-config summary::marker{color:#57816a}
+.source-config form{padding:3px 0 12px}
+.source-config-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,95px),1fr));gap:8px;margin-bottom:7px}
+.source-panel .source-candidate{flex-wrap:wrap}
+.source-panel .source-candidate .source-actions{flex-direction:row;flex-shrink:1;justify-content:flex-start}
+.source-download{margin:10px 0;padding:8px 0;border-block:1px solid #87938750}
+.source-download .source-row{padding-top:0;border:0}
+.source-download .source-row small{flex:none}
+.source-download progress{width:100%;height:6px;accent-color:#3f5a49}
+.source-download .source-actions{justify-content:flex-start}
+@media(max-width:340px){.source-panel{padding-inline:12px}.source-panel .source-actions{flex-direction:column}.source-form:not(.source-manual){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.source-form:not(.source-manual) button{grid-column:1/-1}}

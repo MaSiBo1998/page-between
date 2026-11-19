@@ -1,11 +1,13 @@
 // Synthetic HTML only. Run: node tests/fixture-server.mjs
 import { createServer } from 'node:http';
 const requests = [];
+let catalogRequests = 0;
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:18765');
-  if (url.pathname === '/stats') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(requests)); return; }
+  if (url.pathname === '/stats') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(url.searchParams.has('catalog') ? catalogRequests : requests)); return; }
   res.setHeader('Content-Type', 'text/html;charset=utf-8');
   if (url.pathname === '/book') {
+    catalogRequests++;
     res.end('<!doctype html><title>合成测试小说</title><h1>合成测试小说</h1><div id="list">' + Array.from({ length: 24 }, (_, i) => `<a href="/chapter/${i + 1}">第${i + 1}章 测试</a>`).join('<br>') + '</div>'); return;
   }
   const match = url.pathname.match(/^\/chapter\/(\d+)$/);

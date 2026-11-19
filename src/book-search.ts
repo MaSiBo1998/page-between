@@ -1,17 +1,19 @@
 import type { Entry } from './types';
 
 export const BING_PERMISSIONS = ['https://www.bing.com/*', 'https://cn.bing.com/*'];
+export const DEFAULT_SEARCH_LIMIT = 10;
+export const MAX_SEARCH_LIMIT = 50;
 
 export function searchPhrase(title: string, author: string) {
   return [title.trim(), author.trim(), '小说 目录'].filter(Boolean).join(' ');
 }
 
-export function extractBingResults(page = document, address = location.href): Entry[] {
-  const source = new URL(address);
+export function extractBingResults(page?: Document | null, address?: string | null, limit = 10): Entry[] {
+  const source = new URL(address ?? location.href);
   const origins = ['https://www.bing.com', 'https://cn.bing.com'];
   if (!origins.includes(source.origin) || source.pathname !== '/search' || Number(source.searchParams.get('first') || 1) > 1) return [];
   const result = new Map<string, Entry>();
-  for (const link of page.querySelectorAll<HTMLAnchorElement>('#b_results > li.b_algo:not(.b_ad) h2 a[href]')) {
+  for (const link of (page ?? document).querySelectorAll<HTMLAnchorElement>('#b_results > li.b_algo:not(.b_ad) h2 a[href]')) {
     const title = (link.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     if (!title) continue;
     try {
@@ -26,7 +28,7 @@ export function extractBingResults(page = document, address = location.href): En
       target.hash = '';
       for (const key of [...target.searchParams.keys()]) if (/^utm_|^(?:msclkid|fbclid|gclid)$/i.test(key)) target.searchParams.delete(key);
       if (!result.has(target.href)) result.set(target.href, { title, url: target.href });
-      if (result.size === 12) break;
+      if (result.size >= limit) break;
     } catch { continue; }
   }
   return [...result.values()];

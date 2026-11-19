@@ -1,5 +1,6 @@
-import { clampFrame, isEditing, matchesShortcut, readerPrefs, saveReaderPrefs } from '../src/reader-prefs';
+import { clampFrame, isEditing, matchesShortcut, readerPrefs, resizeFrame, saveReaderPrefs, type ResizeDirection } from '../src/reader-prefs';
 import { PREVIEW_BUILD } from '../src/build-info';
+import { DRAG_START_DISTANCE } from '../src/reader-drag';
 
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'], registration: 'runtime',
@@ -17,8 +18,18 @@ export default defineContentScript({
       .frame{width:100%;height:100%;position:relative}iframe{border:0;width:100%;height:100%;display:block;background:transparent;color-scheme:normal}
       .grab,.resize{position:absolute;opacity:.45;transition:opacity .15s;touch-action:none;user-select:none;background:#6c7d6a30;border:0;z-index:2}
       .grab:hover,.resize:hover,.grab:focus-visible,.resize:focus-visible{opacity:1}
-      .frame[data-controls=hide] .grab,.frame[data-controls=hide] .resize{visibility:hidden;pointer-events:none}
-      .grab{top:0;left:40%;width:20%;height:7px;border-radius:4px;cursor:move}.resize{bottom:0;right:0;width:13px;height:13px;cursor:nwse-resize}
+      .frame[data-controls=hide] .grab{visibility:hidden;pointer-events:none}
+      .grab{top:6px;left:40%;width:20%;height:5px;border-radius:0 0 4px 4px;cursor:move}
+      .resize{appearance:none;padding:0;background:transparent}
+      .resize:focus-visible{outline:2px solid #658272;outline-offset:-2px}
+      .resize[data-edge=n],.resize[data-edge=s]{left:12px;right:12px;height:6px;cursor:ns-resize}
+      .resize[data-edge=w],.resize[data-edge=e]{top:12px;bottom:12px;width:6px;cursor:ew-resize}
+      .resize[data-edge=n]{top:0}.resize[data-edge=s]{bottom:0}.resize[data-edge=w]{left:0}.resize[data-edge=e]{right:0}
+      .resize[data-corner]{width:12px;height:12px}
+      .resize[data-corner=nw]{top:0;left:0;cursor:nwse-resize}
+      .resize[data-corner=ne]{top:0;right:0;cursor:nesw-resize}
+      .resize[data-corner=sw]{bottom:0;left:0;cursor:nesw-resize}
+      .resize[data-corner=se]{bottom:0;right:0;cursor:nwse-resize}
       .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:white;color:#354038;font:14px/1.8 sans-serif;padding:24px;box-sizing:border-box}
       .loading[hidden]{display:none}.loading button{font:inherit;border:1px solid #ddd;border-radius:4px;background:white;color:inherit;padding:6px 14px;cursor:pointer}
     `;
@@ -29,8 +40,13 @@ export default defineContentScript({
     const retry = document.createElement('button'); retry.textContent = '重新加载阅读器'; retry.hidden = true;
     loading.append(loadingText, retry);
     const grab = document.createElement('button'); grab.className = 'grab'; grab.title = '拖动阅读器'; grab.setAttribute('aria-label', '拖动阅读器');
-    const resize = document.createElement('button'); resize.className = 'resize'; resize.title = '调整阅读器大小'; resize.setAttribute('aria-label', '调整阅读器大小');
-    container.append(frame, loading, grab, resize); shadow.append(style, container); document.documentElement.append(host);
+    const edges = { n: '上边', s: '下边', w: '左边', e: '右边', nw: '左上角', ne: '右上角', sw: '左下角', se: '右下角' };
+    const handles = (Object.keys(edges) as ResizeDirection[]).map(corner => {
+      const handle = document.createElement('button'); handle.className = 'resize'; handle.dataset[corner.length === 1 ? 'edge' : 'corner'] = corner;
+      handle.setAttribute('aria-label', `调整阅读器大小：${edges[corner]}`);
+      return { handle, corner };
+    });
+    container.append(frame, loading, grab, ...handles.map(({ handle }) => handle)); shadow.append(style, container); document.documentElement.append(host);
     let prefs = await readerPrefs(), visible = false, dragging = false, editing = false;
     if (ctx.isInvalid) { host.remove(); return; }
     let ready = false;
@@ -38,7 +54,7 @@ export default defineContentScript({
     host.dataset.readerState = 'idle';
     let pendingView: { type: string; bookId?: string; view?: string; controls?: 'show' | 'hide' } | undefined;
     let endHandleDrag: (() => void) | undefined;
-    let remoteDrag: { session: string; x: number; y: number; pointerId: number; origin: typeof prefs } | undefined;
+    let remoteDrag: { session: string; x: number; y: number; pointerId: number; origin: typeof prefs; moved: boolean } | undefined;
     const targetOrigin = chrome.runtime.getURL('').slice(0, -1);
     function failed(state: string) {
       if (ctx.isInvalid) return;
@@ -62,12 +78,15 @@ export default defineContentScript({
     function stopDrag() {
       endHandleDrag?.();
       if (remoteDrag) {
+        const { moved } = remoteDrag;
         remoteDrag = undefined; dragging = false;
-        void saveReaderPrefs({ x: prefs.x, y: prefs.y }).catch(() => {});
+        if (moved) void saveReaderPrefs({ x: prefs.x, y: prefs.y }).catch(() => {});
       }
     }
     function moveRemote(x: number, y: number) {
       if (!remoteDrag) return;
+      if (!remoteDrag.moved && Math.hypot(x - remoteDrag.x, y - remoteDrag.y) < DRAG_START_DISTANCE) return;
+      remoteDrag.moved = true;
       prefs = { ...remoteDrag.origin, x: remoteDrag.origin.x + x - remoteDrag.x, y: remoteDrag.origin.y + y - remoteDrag.y };
       layout();
     }
@@ -83,12 +102,17 @@ export default defineContentScript({
     }
     function layout() {
       prefs = clampFrame(prefs, innerWidth, innerHeight);
-      Object.assign(host.style, { left: prefs.x + 'px', top: prefs.y + 'px', width: prefs.width + 'px', height: prefs.height + 'px', display: visible ? 'block' : 'none' });
+      if (!visible && shadow.activeElement === frame) frame.blur();
+      host.style.setProperty('display', visible ? 'block' : 'none', 'important');
+      Object.assign(host.style, { left: prefs.x + 'px', top: prefs.y + 'px', width: prefs.width + 'px', height: prefs.height + 'px' });
+    }
+    function hideOverlay() {
+      visible = false; layout(); notifyVisibility();
     }
     function show(bookId?: string, view?: string, sourceTab?: number, visibility?: 'show' | 'hide' | 'keep', controls?: 'show' | 'hide', fromShortcut = false) {
       if (ctx.isInvalid) return;
+      if (visibility === 'hide') { hideOverlay(); return; }
       if (fromShortcut && (isEditing(document.activeElement) || visible && editing)) return;
-      if (visibility === 'hide') { visible = false; layout(); notifyVisibility(); return; }
       if (visibility === 'keep' && !frame.src) return;
       if (!frame.src) {
         const params = new URLSearchParams({ embedded: '1' });
@@ -131,7 +155,7 @@ export default defineContentScript({
         notifyVisibility();
       }
       if (event.data?.type === 'novel-reader-failed') { clearTimeout(loadTimer); failed('initialization-error'); }
-      if (event.data?.type === 'novel-reader-hide') { visible = false; layout(); notifyVisibility(); }
+      if (event.data?.type === 'novel-reader-hide') hideOverlay();
       if (event.data?.type === 'novel-reader-input') editing = event.data.editing === true;
       if (event.data?.type === 'novel-reader-controls' && ['auto', 'show', 'hide'].includes(event.data.controls)) container.dataset.controls = event.data.controls;
       if (event.data?.type === 'novel-reader-drag') {
@@ -140,7 +164,7 @@ export default defineContentScript({
         if (phase === 'end') { if (session === remoteDrag?.session) stopDrag(); return; }
         if (!visible || !Number.isFinite(x) || !Number.isFinite(y)) return;
         if (phase === 'start' && !dragging && Number.isInteger(pointerId)) {
-          remoteDrag = { session, x, y, pointerId, origin: { ...prefs } }; dragging = true;
+          remoteDrag = { session, x, y, pointerId, origin: { ...prefs }, moved: false }; dragging = true;
         } else if (phase === 'move' && remoteDrag?.session === session) {
           moveRemote(x, y);
         }
@@ -148,10 +172,10 @@ export default defineContentScript({
     });
     ctx.addEventListener(window, 'keydown', event => {
       if (ctx.isInvalid) return;
-      if (matchesShortcut(event, prefs.shortcut)) { event.preventDefault(); show(); }
-      else if (visible && matchesShortcut(event, 'Escape')) { visible = false; layout(); notifyVisibility(); }
-    });
-    ctx.addEventListener(window, 'resize', layout);
+      if (matchesShortcut(event, prefs.shortcut, true)) { event.preventDefault(); event.stopPropagation(); show(); }
+      else if (visible && matchesShortcut(event, 'Escape')) hideOverlay();
+    }, { capture: true });
+    ctx.addEventListener(window, 'resize', () => { stopDrag(); layout(); });
     ctx.addEventListener(window, 'pointermove', event => {
       if (!event.isTrusted || !remoteDrag || remoteDrag.pointerId !== event.pointerId) return;
       if (event.buttons & 1) moveRemote(event.screenX, event.screenY); else finishRemotePointer(event);
@@ -165,27 +189,45 @@ export default defineContentScript({
       if (changes.readerPrefs && !dragging) { prefs = { ...prefs, ...changes.readerPrefs.newValue }; layout(); }
     }
     chrome.storage.onChanged.addListener(storageChanged);
-    for (const [handle, resizing] of [[grab, false], [resize, true]] as const) {
+    function saveGeometry() {
+      void saveReaderPrefs({ x: prefs.x, y: prefs.y, width: prefs.width, height: prefs.height }).catch(() => {});
+    }
+    for (const { handle, corner } of [{ handle: grab, corner: undefined }, ...handles]) {
+      if (corner) handle.addEventListener('keydown', event => {
+        if (dragging || !visible || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        const step = event.shiftKey ? 32 : 8;
+        const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+        const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+        prefs = resizeFrame(prefs, corner, dx, dy, innerWidth, innerHeight); layout(); saveGeometry();
+      });
       handle.addEventListener('pointerdown', event => {
-        if (ctx.isInvalid || event.button !== 0 || dragging) return;
-        event.preventDefault(); dragging = true; handle.setPointerCapture(event.pointerId);
+        if (ctx.isInvalid || !visible || event.button !== 0 || dragging) return;
+        event.preventDefault();
+        try { handle.setPointerCapture(event.pointerId); } catch { return; }
+        dragging = true;
         const origin = { ...prefs }, x = event.clientX, y = event.clientY;
         frame.style.pointerEvents = 'none';
-        const move = (event: PointerEvent) => {
-          prefs = resizing ? { ...origin, width: origin.width + event.clientX - x, height: origin.height + event.clientY - y }
-            : { ...origin, x: origin.x + event.clientX - x, y: origin.y + event.clientY - y };
+        const move = (current: PointerEvent) => {
+          if (current.pointerId !== event.pointerId) return;
+          const dx = current.clientX - x, dy = current.clientY - y;
+          prefs = corner ? resizeFrame(origin, corner, dx, dy, innerWidth, innerHeight)
+            : { ...origin, x: origin.x + dx, y: origin.y + dy };
           layout();
         };
         const end = (finishEvent?: Event) => {
+          if (finishEvent instanceof PointerEvent && finishEvent.pointerId !== event.pointerId) return;
           if (finishEvent instanceof PointerEvent && finishEvent.type === 'pointerup') move(finishEvent);
           endHandleDrag = undefined;
           dragging = false; frame.style.pointerEvents = '';
+          handle.removeEventListener('lostpointercapture', end);
           if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
           handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
-          void saveReaderPrefs({ x: prefs.x, y: prefs.y, width: prefs.width, height: prefs.height }).catch(() => {});
+          saveGeometry();
         };
         endHandleDrag = end;
         handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+        handle.addEventListener('lostpointercapture', end);
       });
     }
   }
